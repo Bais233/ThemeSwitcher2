@@ -18,7 +18,11 @@ use tao::event_loop::{ControlFlow, EventLoop};
 use tray_icon::menu::MenuEvent;
 
 // 引擎状态(controller HTTP 线程读)与解析后的定位(启动时写一次)
-pub static ENGINE_STATE: RwLock<controller::EngineStatus> = RwLock::new(controller::EngineStatus::default());
+pub static ENGINE_STATE: RwLock<controller::EngineStatus> = RwLock::new(controller::EngineStatus {
+    light: true,
+    next_when: String::new(),
+    next_light: false,
+});
 pub static RESOLVED_LATLON: Mutex<String> = Mutex::new(String::new());
 
 fn main() {
