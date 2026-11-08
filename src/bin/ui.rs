@@ -231,31 +231,28 @@ fn main() {
     // ---- 心跳轮询: /status → 界面属性 ----
     {
         let weak = weak.clone();
-        std::thread::spawn(move || {
-            let mut last = String::new();
-            loop {
-                std::thread::sleep(Duration::from_secs(1));
-                let Some(st) = get_json("/status") else {
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(ui) = weak.upgrade() {
-                            ui.set_engine_ok(false);
-                        }
-                    });
-                    continue;
-                };
-                let key = st.to_string();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(1));
+            let Some(st) = get_json("/status") else {
+                let weak = weak.clone();
                 let _ = slint::invoke_from_event_loop(move || {
-                    let Some(ui) = weak.upgrade() else { return };
-                    ui.set_engine_ok(true);
-                    ui.set_light(st["light"] == true);
-                    ui.set_next_when(st["nextWhen"].as_str().unwrap_or("").into());
-                    ui.set_next_light(st["nextLight"] == true);
-                    ui.set_loc(st["locationResolved"].as_str().unwrap_or("").into());
-                    ui.set_sunrise_t(st["sunrise"].as_str().unwrap_or("").into());
-                    ui.set_sunset_t(st["sunset"].as_str().unwrap_or("").into());
+                    if let Some(ui) = weak.upgrade() {
+                        ui.set_engine_ok(false);
+                    }
                 });
-                last = key;
-            }
+                continue;
+            };
+            let weak = weak.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(ui) = weak.upgrade() else { return };
+                ui.set_engine_ok(true);
+                ui.set_light(st["light"] == true);
+                ui.set_next_when(st["nextWhen"].as_str().unwrap_or("").into());
+                ui.set_next_light(st["nextLight"] == true);
+                ui.set_loc(st["locationResolved"].as_str().unwrap_or("").into());
+                ui.set_sunrise_t(st["sunrise"].as_str().unwrap_or("").into());
+                ui.set_sunset_t(st["sunset"].as_str().unwrap_or("").into());
+            });
         });
     }
 
