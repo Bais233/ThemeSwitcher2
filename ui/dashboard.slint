@@ -1,37 +1,10 @@
-// dashboard.slint — ThemeSwitcher2 玻璃仪表盘(Slint 软件渲染版)
-import { ComboBox } from "std-widgets.slint";
-
-// 玻璃开关(纯 CPU 绘制)
-component Switch inherits Rectangle {
-    in-out property <bool> is-on;
-    callback toggled();
-    width: 46px;
-    height: 24px;
-    border-radius: 12px;
-    background: is-on ? #7fb2ff : #3a3f4d;
-    border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.14);
-    Rectangle {
-        width: 18px;
-        height: 18px;
-        y: 2px;
-        x: is-on ? parent.width - self.width - 4px : 4px;
-        border-radius: 9px;
-        background: white;
-        animate x { duration: 150ms; easing: ease-out; }
-    }
-    TouchArea {
-        clicked => { root.toggled(); }
-    }
-}
+// dashboard.slint — ThemeSwitcher2 简单设置界面(标准控件版)
+import { ComboBox, Button, Switch, GroupBox } from "std-widgets.slint";
 
 export component Dashboard inherits Window {
     title: "ThemeSwitcher2";
-    preferred-width: 1180px;
-    preferred-height: 880px;
-    min-width: 1000px;
-    min-height: 760px;
-    background: #14151f;
+    preferred-width: 520px;
+    preferred-height: 560px;
 
     in property <bool> light;
     in property <string> next-when;
@@ -64,325 +37,119 @@ export component Dashboard inherits Window {
     callback open-config-clicked();
 
     VerticalLayout {
-        // ===== 顶部导航栏 =====
-        Rectangle {
-            height: 62px;
-            background: #171826;
-            HorizontalLayout {
-                padding: 0 20px;
-                spacing: 16px;
-                Rectangle {
-                    width: 28px;
-                    height: 28px;
-                    border-radius: 14px;
-                    background: @linear-gradient(135deg, #ffd76a 0%, #ffd76a 50%, #2e3854 50%, #2e3854 100%);
-                    y: 16px;
+        padding: 20px;
+        spacing: 14px;
+
+        // ===== 状态 =====
+        HorizontalLayout {
+            spacing: 10px;
+            Rectangle {
+                width: 10px; height: 10px; border-radius: 5px; y: 5px;
+                background: engine-ok ? (light ? #34d399 : #f59e0b) : #ef4444;
+            }
+            Text {
+                text: engine-ok
+                    ? "当前: " + (light ? "浅色" : "深色") + " · 下次切换 " + (next-when == "" ? "--:--" : next-when) + " → " + (next-light ? "浅色" : "深色")
+                    : "引擎未响应";
+                vertical-alignment: center;
+                font-size: 14px;
+            }
+        }
+        HorizontalLayout {
+            spacing: 20px;
+            Text { text: "定位: " + (loc == "" ? "获取中…" : loc); font-size: 12px; color: #888; vertical-alignment: center; }
+            Text { text: "日出: " + (sunrise-t == "" ? "…" : sunrise-t); font-size: 12px; color: #888; vertical-alignment: center; }
+            Text { text: "日落: " + (sunset-t == "" ? "…" : sunset-t); font-size: 12px; color: #888; vertical-alignment: center; }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            Button { text: "切到浅色"; clicked => { root.to-light-clicked(); } }
+            Button { text: "切到深色"; clicked => { root.to-dark-clicked(); } }
+        }
+
+        // ===== 主题 =====
+        GroupBox {
+            title: "主题";
+            VerticalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "应用主题 (UWP / 资源管理器)"; vertical-alignment: center; width: 220px; }
+                    Switch { checked <=> root.sw-apps; toggled => { root.apps-toggled(); } }
                 }
-                Text {
-                    text: "ThemeSwitcher2";
-                    color: #f2f4f8;
-                    font-size: 15px;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "系统主题 (任务栏 / 开始菜单)"; vertical-alignment: center; width: 220px; }
+                    Switch { checked <=> root.sw-system; toggled => { root.system-toggled(); } }
                 }
-                Rectangle {
-                    width: 80px;
-                    height: 36px;
-                    border-radius: 12px;
-                    background: rgba(127, 178, 255, 0.16);
-                    border-width: 1px;
-                    border-color: rgba(127, 178, 255, 0.35);
-                    HorizontalLayout {
-                        alignment: center;
-                        Text { text: "状态"; color: #f2f4f8; font-size: 13.5px; vertical-alignment: center; }
-                    }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "日出偏移"; vertical-alignment: center; width: 220px; }
+                    Button { text: "-"; clicked => { root.rise-step(-1); } }
+                    Text { text: root.rise-off; vertical-alignment: center; min-width: 40px; horizontal-alignment: center; }
+                    Button { text: "+"; clicked => { root.rise-step(1); } }
                 }
-                Rectangle { vertical-stretch: 1; }
-                Rectangle {
-                    width: 110px;
-                    height: 28px;
-                    border-radius: 14px;
-                    background: engine-ok ? rgba(52, 211, 153, 0.10) : rgba(248, 113, 113, 0.10);
-                    border-width: 1px;
-                    border-color: engine-ok ? rgba(52, 211, 153, 0.30) : rgba(248, 113, 113, 0.35);
-                    HorizontalLayout {
-                        padding: 0 10px;
-                        spacing: 6px;
-                        alignment: center;
-                        Rectangle {
-                            width: 7px; height: 7px; border-radius: 4px; y: 10px;
-                            background: engine-ok ? #34d399 : #f87171;
-                        }
-                        Text {
-                            text: engine-ok ? "引擎运行中" : "引擎未响应";
-                            color: engine-ok ? #34d399 : #f87171;
-                            font-size: 11.5px;
-                            vertical-alignment: center;
-                        }
-                    }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "日落偏移"; vertical-alignment: center; width: 220px; }
+                    Button { text: "-"; clicked => { root.set-step(-1); } }
+                    Text { text: root.set-off; vertical-alignment: center; min-width: 40px; horizontal-alignment: center; }
+                    Button { text: "+"; clicked => { root.set-step(1); } }
                 }
             }
         }
 
-        Flickable {
+        // ===== 指针 =====
+        GroupBox {
+            title: "鼠标指针";
             VerticalLayout {
-                padding: 22px 30px 26px;
-                spacing: 16px;
-
-                // ===== hero 状态卡 =====
-                Rectangle {
-                    border-radius: 20px;
-                    background: #1b1d2b;
-                    border-width: 1px;
-                    border-color: rgba(255, 255, 255, 0.13);
-                    height: 158px;
-                    HorizontalLayout {
-                        padding-top: 22px; padding-bottom: 22px; padding-left: 24px; padding-right: 24px;
-                        spacing: 18px;
-                        VerticalLayout {
-                            alignment: start;
-                            spacing: 12px;
-                            HorizontalLayout {
-                                spacing: 8px;
-                                alignment: start;
-                                Rectangle {
-                                    width: 8px; height: 8px; border-radius: 4px; y: 6px;
-                                    background: light ? #34d399 : #fca55d;
-                                }
-                                Text {
-                                    text: light ? "浅色模式" : "深色模式";
-                                    color: light ? #34d399 : #fca55d;
-                                    font-size: 12.5px;
-                                    vertical-alignment: center;
-                                }
-                            }
-                            Text {
-                                text: "下次切换 " + (next-when == "" ? "--:--" : next-when);
-                                color: #f2f4f8;
-                                font-size: 25px;
-                                font-weight: 600;
-                            }
-                            HorizontalLayout {
-                                spacing: 30px;
-                                VerticalLayout {
-                                    spacing: 4px;
-                                    Text { text: "定位"; color: #8a90a3; font-size: 12px; }
-                                    Text { text: loc == "" ? "获取中…" : loc; color: #f2f4f8; font-size: 13.5px; }
-                                }
-                                VerticalLayout {
-                                    spacing: 4px;
-                                    Text { text: "日出"; color: #8a90a3; font-size: 12px; }
-                                    Text { text: sunrise-t == "" ? "…" : sunrise-t; color: #f2f4f8; font-size: 13.5px; }
-                                }
-                                VerticalLayout {
-                                    spacing: 4px;
-                                    Text { text: "日落"; color: #8a90a3; font-size: 12px; }
-                                    Text { text: sunset-t == "" ? "…" : sunset-t; color: #f2f4f8; font-size: 13.5px; }
-                                }
-                            }
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 96px;
-                                height: 96px;
-                                border-radius: 42px;
-                                background: light
-                                    ? @linear-gradient(135deg, #ffd76a, #e8933a)
-                                    : @linear-gradient(135deg, #7ea8ff, #2b4fd8);
-                                HorizontalLayout {
-                                    alignment: center;
-                                    vertical-alignment: center;
-                                    Rectangle {
-                                        // 月牙(深色)或太阳圆心(浅色)
-                                        width: light ? 22px : 30px;
-                                        height: light ? 22px : 30px;
-                                        border-radius: light ? 11px : 15px;
-                                        x: light ? 34px : 33px;
-                                        y: light ? 36px : 33px;
-                                        background: light ? #ffffff : #14151f;
-                                    }
-                                }
-                                TouchArea {
-                                    clicked => {
-                                        if (light) { root.to-dark-clicked(); } else { root.to-light-clicked(); }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ===== 切换范围 + 偏移 =====
+                spacing: 10px;
                 HorizontalLayout {
-                    spacing: 16px;
-                    Rectangle {
-                        border-radius: 20px;
-                        background: #1b1d2b;
-                        border-width: 1px;
-                        border-color: rgba(255, 255, 255, 0.13);
-                        HorizontalLayout {
-                            padding-top: 20px; padding-bottom: 20px; padding-left: 22px; padding-right: 22px;
-                            VerticalLayout {
-                                spacing: 4px;
-                                HorizontalLayout {
-                                    spacing: 8px;
-                                    Text { text: "「深色模式」切换哪些项"; color: #8a90a3; font-size: 12.5px; vertical-alignment: center; }
-                                }
-                                HorizontalLayout {
-                                    Rectangle { width: 1px; }
-                                    VerticalLayout {
-                                        spacing: 2px;
-                                        Text { text: "应用主题"; color: #f2f4f8; font-size: 14px; }
-                                        Text { text: "UWP / 资源管理器"; color: #8a90a3; font-size: 11.5px; }
-                                    }
-                                    Rectangle { horizontal-stretch: 1; }
-                                    Switch { is-on <=> root.sw-apps; toggled => { root.apps-toggled(); } }
-                                }
-                                HorizontalLayout {
-                                    Rectangle { width: 1px; }
-                                    VerticalLayout {
-                                        spacing: 2px;
-                                        Text { text: "系统主题"; color: #f2f4f8; font-size: 14px; }
-                                        Text { text: "任务栏 / 开始菜单"; color: #8a90a3; font-size: 11.5px; }
-                                    }
-                                    Rectangle { horizontal-stretch: 1; }
-                                    Switch { is-on <=> root.sw-system; toggled => { root.system-toggled(); } }
-                                }
-                            }
-                        }
-                    }
-                    Rectangle {
-                        border-radius: 20px;
-                        background: #1b1d2b;
-                        border-width: 1px;
-                        border-color: rgba(255, 255, 255, 0.13);
-                        HorizontalLayout {
-                            padding-top: 20px; padding-bottom: 20px; padding-left: 22px; padding-right: 22px;
-                            VerticalLayout {
-                                spacing: 4px;
-                                Text { text: "切换时机偏移(分钟)"; color: #8a90a3; font-size: 12.5px; }
-                                HorizontalLayout {
-                                    Rectangle { width: 1px; }
-                                    Text { text: "日出"; color: #f2f4f8; font-size: 14px; vertical-alignment: center; }
-                                    Rectangle { horizontal-stretch: 1; }
-                                    HorizontalLayout {
-                                        spacing: 10px;
-                                        Text { text: rise-off; color: #f2f4f8; font-size: 14px; font-weight: 600; vertical-alignment: center; }
-                                        VerticalLayout {
-                                            spacing: 0;
-                                            Text { text: "▲"; color: #8a90a3; font-size: 10px; }
-                                            Text { text: "▼"; color: #8a90a3; font-size: 10px; }
-                                        }
-                                    }
-                                }
-                                HorizontalLayout {
-                                    Rectangle { width: 1px; }
-                                    Text { text: "日落"; color: #f2f4f8; font-size: 14px; vertical-alignment: center; }
-                                    Rectangle { horizontal-stretch: 1; }
-                                    HorizontalLayout {
-                                        spacing: 10px;
-                                        Text { text: set-off; color: #f2f4f8; font-size: 14px; font-weight: 600; vertical-alignment: center; }
-                                        VerticalLayout {
-                                            spacing: 0;
-                                            Text { text: "▲"; color: #8a90a3; font-size: 10px; }
-                                            Text { text: "▼"; color: #8a90a3; font-size: 10px; }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        TouchArea {
-                            // 简化: 点击卡片上半/下半调日出/日落
-                            clicked => { root.rise-step(1); }
-                        }
+                    spacing: 10px;
+                    Text { text: "浅色方案"; vertical-alignment: center; width: 100px; }
+                    ComboBox {
+                        min-width: 260px;
+                        model: root.schemes;
+                        current-index <=> root.light-idx;
+                        selected => { root.light-scheme-changed(self.current-index); }
                     }
                 }
-
-                // ===== 指针卡 =====
-                Rectangle {
-                    border-radius: 20px;
-                    background: #1b1d2b;
-                    border-width: 1px;
-                    border-color: rgba(255, 255, 255, 0.13);
-                    HorizontalLayout {
-                        padding-top: 20px; padding-bottom: 20px; padding-left: 22px; padding-right: 22px;
-                        VerticalLayout {
-                            spacing: 8px;
-                            Text { text: "鼠标指针 · 同步切换"; color: #8a90a3; font-size: 12.5px; }
-                            HorizontalLayout {
-                                spacing: 18px;
-                                VerticalLayout {
-                                    spacing: 6px;
-                                    Text { text: "浅色方案"; color: #f2f4f8; font-size: 13px; }
-                                    ComboBox {
-                                        model: schemes;
-                                        current-index <=> light-idx;
-                                        width: 100%;
-                                        selected => { root.light-scheme-changed(self.current-index); }
-                                    }
-                                }
-                                VerticalLayout {
-                                    spacing: 6px;
-                                    Text { text: "深色方案"; color: #f2f4f8; font-size: 13px; }
-                                    ComboBox {
-                                        model: schemes;
-                                        current-index <=> dark-idx;
-                                        width: 100%;
-                                        selected => { root.dark-scheme-changed(self.current-index); }
-                                    }
-                                }
-                            }
-                            HorizontalLayout {
-                                Rectangle { width: 1px; }
-                                VerticalLayout {
-                                    spacing: 2px;
-                                    Text { text: "跟随主题自动切换指针"; color: #f2f4f8; font-size: 14px; }
-                                    Text { text: "识别不到当前方案时保持现状"; color: #8a90a3; font-size: 11.5px; }
-                                }
-                                Rectangle { horizontal-stretch: 1; }
-                                Switch { is-on <=> root.sw-cursor; toggled => { root.cursor-toggled(); } }
-                            }
-                        }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "深色方案"; vertical-alignment: center; width: 100px; }
+                    ComboBox {
+                        min-width: 260px;
+                        model: root.schemes;
+                        current-index <=> root.dark-idx;
+                        selected => { root.dark-scheme-changed(self.current-index); }
                     }
                 }
-
-                // ===== 底部条 =====
-                Rectangle {
-                    border-radius: 20px;
-                    background: #1b1d2b;
-                    border-width: 1px;
-                    border-color: rgba(255, 255, 255, 0.13);
-                    height: 76px;
-                    HorizontalLayout {
-                        padding: 0 22px;
-                        spacing: 20px;
-                        alignment: center;
-                        VerticalLayout {
-                            spacing: 2px;
-                            Text { text: "开机自启"; color: #f2f4f8; font-size: 14px; }
-                            Text { text: "HKCU Run"; color: #8a90a3; font-size: 11.5px; }
-                        }
-                        Switch { is-on <=> root.sw-auto; toggled => { root.auto-toggled(); } }
-                        Rectangle { horizontal-stretch: 1; }
-                        Text {
-                            text: "打开配置文件";
-                            color: #7fb2ff;
-                            font-size: 13px;
-                            vertical-alignment: center;
-                            TouchArea { clicked => { root.open-config-clicked(); } }
-                        }
-                        Rectangle {
-                            width: 130px; height: 42px; border-radius: 14px;
-                            background: @linear-gradient(135deg, #96bcff, #7fb2ff 60%, #5d92e8);
-                            border-width: 1px; border-color: rgba(255, 255, 255, 0.25);
-                            HorizontalLayout { alignment: center;
-                                Text { text: "保存并关闭"; color: #ffffff; font-size: 14px; font-weight: 600; vertical-alignment: center; }
-                            }
-                            TouchArea { clicked => { root.save-clicked(); } }
-                        }
-                    }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "跟随主题自动切换指针"; vertical-alignment: center; width: 220px; }
+                    Switch { checked <=> root.sw-cursor; toggled => { root.cursor-toggled(); } }
                 }
             }
+        }
+
+        // ===== 通用 =====
+        GroupBox {
+            title: "通用";
+            VerticalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "开机自启 (HKCU Run)"; vertical-alignment: center; width: 220px; }
+                    Switch { checked <=> root.sw-auto; toggled => { root.auto-toggled(); } }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 10px;
+            Rectangle { horizontal-stretch: 1; }
+            Button { text: "打开配置文件"; clicked => { root.open-config-clicked(); } }
+            Button { text: "保存"; primary: true; clicked => { root.save-clicked(); } }
         }
     }
 }
