@@ -31,4 +31,27 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/ThemeSwitcher2.exe
+          files: |
+            target/release/ThemeSwitcher2.exe
+
+  dashboard:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Generate Windows platform
+        run: flutter create --platforms=windows --project-name themeswitcher2_ui .
+      - name: Pub get
+        run: flutter pub get
+      - name: Build (release)
+        run: flutter build windows --release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThemeSwitcher2-Dashboard
+          path: ui/build/windows/x64/runner/Release/

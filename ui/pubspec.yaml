@@ -1,0 +1,22 @@
+name: themeswitcher2_ui
+description: ThemeSwitcher2 玻璃仪表盘(Flutter 桌面)
+publish_to: 'none'
+version: 2.0.0
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  liquid_glass_widgets: ^1.17.0
+  flutter_acrylic: ^1.0.0
+  window_manager: ^0.4.3
+  http: ^1.2.0
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

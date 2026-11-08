@@ -53,13 +53,24 @@ pub fn serve() {
             (Method::Get, "/status") => {
                 let st = crate::ENGINE_STATE.read().unwrap().clone();
                 let s = settings::get();
+                let lat = latlon_of(&s);
+                // 今日日出日落(本地 NOAA, 即算即用)
+                let (sunrise, sunset) = match crate::sun::get_sun_event(&lat, true, 0) {
+                    Ok(t) => match crate::sun::get_sun_event(&lat, false, 0) {
+                        Ok(t2) => (t.format("%H:%M").to_string(), t2.format("%H:%M").to_string()),
+                        Err(_) => (String::new(), String::new()),
+                    },
+                    Err(_) => (String::new(), String::new()),
+                };
                 (
                     200,
                     json!({
                         "light": st.light,
                         "nextWhen": st.next_when,
                         "nextLight": st.next_light,
-                        "locationResolved": latlon_of(&s),
+                        "locationResolved": lat,
+                        "sunrise": sunrise,
+                        "sunset": sunset,
                         "engine": "running",
                     })
                     .to_string(),
