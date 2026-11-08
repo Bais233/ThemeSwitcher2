@@ -7,9 +7,18 @@ use themeswitcher2::{controller, cursor, location, settings, sun, theme, RESOLVE
 
 #[tauri::command]
 fn get_status() -> serde_json::Value {
-    let st = controller::ENGINE.read().unwrap().clone();
     let s = settings::get();
     let lat = RESOLVED_LATLON.lock().unwrap().clone();
+    // 独立进程没有托盘引擎的心跳状态, 下次切换直接现算
+    let (next_when, next_light) = match sun::next_event(
+        &lat,
+        s.sunrise_offset_min,
+        s.sunset_offset_min,
+        chrono::Local::now(),
+    ) {
+        Ok((t, l)) => (t.format("%H:%M").to_string(), l),
+        Err(_) => (String::new(), false),
+    };
     let (sunrise, sunset) = match sun::get_sun_event(&lat, true, 0) {
         Ok(t) => match sun::get_sun_event(&lat, false, 0) {
             Ok(t2) => (t.format("%H:%M").to_string(), t2.format("%H:%M").to_string()),
@@ -17,10 +26,11 @@ fn get_status() -> serde_json::Value {
         },
         Err(_) => (String::new(), String::new()),
     };
+    let light = theme::sync_current_theme();
     serde_json::json!({
-        "light": st.light,
-        "nextWhen": st.next_when,
-        "nextLight": st.next_light,
+        "light": light,
+        "nextWhen": next_when,
+        "nextLight": next_light,
         "locationResolved": lat,
         "sunrise": sunrise,
         "sunset": sunset,
@@ -89,9 +99,14 @@ fn main() {
                 .get_webview_window("main")
                 .expect("main window not found");
             // Win10: SetWindowCompositionAttribute 亚克力(Win11 会自动用更稳的路径)
+            // 普通用户权限下曾被拒访问, 用 TS2_ACRYLIC=1 显式开启以便二分定位
             #[cfg(target_os = "windows")]
             {
-                let _ = window_vibrancy::apply_acrylic(&win, Some((14, 18, 28, 125)));
+                let want_acrylic =
+                    std::env::var("TS2_ACRYLIC").map(|v| v == "1").unwrap_or(false);
+                if want_acrylic {
+                    let _ = window_vibrancy::apply_acrylic(&win, Some((14, 18, 28, 125)));
+                }
             }
             Ok(())
         })
