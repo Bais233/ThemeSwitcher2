@@ -40,7 +40,7 @@ fn main() {
         }
     }
 
-    let event_loop = EventLoop::new().expect("failed to create event loop");
+    let event_loop = EventLoop::new();
     let (tray_obj, m) = tray::build();
     m.autostart.set_checked(theme::get_autostart());
     let menu_rx = MenuEvent::receiver();

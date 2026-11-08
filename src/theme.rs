@@ -16,11 +16,12 @@ pub fn set_theme(light: bool) {
     let s = settings::get();
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok(key) = hkcu.open_subkey_with_flags(PERSONALIZE, KEY_SET_VALUE) {
+        let v: u32 = if light { 1 } else { 0 };
         if s.switch_apps {
-            let _ = key.set_value("AppsUseLightTheme", if light { 1u32 } else { 0u32 });
+            let _ = key.set_value("AppsUseLightTheme", &v);
         }
         if s.switch_system {
-            let _ = key.set_value("SystemUsesLightTheme", if light { 1u32 } else { 0u32 });
+            let _ = key.set_value("SystemUsesLightTheme", &v);
         }
     }
     if s.switch_cursor {
@@ -58,7 +59,7 @@ pub fn set_autostart(enable: bool) {
     if let Ok(key) = hkcu.open_subkey_with_flags(RUN_KEY, KEY_SET_VALUE) {
         if enable {
             if let Ok(exe) = std::env::current_exe() {
-                let _ = key.set_value("ThemeSwitcher2", format!("\"{}\"", exe.display()).as_str());
+                let _ = key.set_value("ThemeSwitcher2", &format!("\"{}\"", exe.display()));
             }
         } else {
             let _ = key.delete_value("ThemeSwitcher2");

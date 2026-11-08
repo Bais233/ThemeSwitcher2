@@ -16,7 +16,8 @@ fn build_icon() -> Option<Icon> {
     let png = include_bytes!("../assets/icon.png");
     let img = image::load_from_memory(png).ok()?;
     let rgba = img.to_rgba8();
-    Icon::from_rgba(rgba.into_raw(), rgba.width(), rgba.height()).ok()
+    let (w, h) = (rgba.width(), rgba.height());
+    Icon::from_rgba(rgba.into_raw(), w, h).ok()
 }
 
 pub fn build() -> (TrayIcon, MenuHandles) {

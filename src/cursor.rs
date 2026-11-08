@@ -55,7 +55,7 @@ pub fn capture_active_cursor() {
     }
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let snapshot = hkcu.open_subkey(CURSORS_KEY).map(|key| {
-        let mut files = [String::new(); 14];
+        let mut files: [String; 14] = Default::default();
         for (i, n) in VALUE_NAMES.iter().enumerate() {
             files[i] = key.get_value::<String, _>(n).unwrap_or_default();
         }
@@ -74,6 +74,14 @@ pub fn get_current_cursor_scheme() -> Option<String> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let key = hkcu.open_subkey(CURSORS_KEY).ok()?;
     key.get_value::<String, _>("").ok()
+}
+
+// winreg 0.52 的 set_value 要求值传引用; 封装两种常用类型
+fn set_str(key: &RegKey, name: &str, value: &str) {
+    let _ = key.set_value(name, &value.to_string());
+}
+fn set_u32(key: &RegKey, name: &str, value: u32) {
+    let _ = key.set_value(name, &value);
 }
 
 pub fn get_cursor_schemes() -> Vec<String> {
@@ -241,7 +249,7 @@ fn enable_theme_changes_mouse_pointers() {
     if let Ok(key) = hkcu.open_subkey_with_flags(THEMES_KEY, KEY_SET_VALUE | KEY_QUERY_VALUE) {
         if let Ok(v) = key.get_value::<u32, _>("ThemeChangesMousePointers") {
             if v == 0 {
-                let _ = key.set_value("ThemeChangesMousePointers", 1u32);
+                set_u32(&key, "ThemeChangesMousePointers", 1);
             }
         }
     }
@@ -261,11 +269,11 @@ pub fn apply_cursor_scheme(scheme: &str) {
             if let Ok(key) = hkcu.open_subkey_with_flags(CURSORS_KEY, KEY_SET_VALUE | KEY_QUERY_VALUE) {
                 for (i, n) in VALUE_NAMES.iter().enumerate() {
                     if let Some(f) = &files[i] {
-                        let _ = key.set_value(n, f.as_str());
+                        set_str(&key, n, f);
                     }
                 }
-                let _ = key.set_value("Scheme Source", 0u32);
-                let _ = key.set_value("", scheme);
+                set_u32(&key, "Scheme Source", 0);
+                set_str(&key, "", scheme);
                 reload_cursors();
             }
             return;
@@ -278,12 +286,12 @@ pub fn apply_cursor_scheme(scheme: &str) {
                     if i < parts.len() {
                         let f = parts[i].trim().trim_matches('"');
                         if !f.is_empty() {
-                            let _ = key.set_value(n, f);
+                            set_str(&key, n, f);
                         }
                     }
                 }
-                let _ = key.set_value("Scheme Source", 0u32);
-                let _ = key.set_value("", scheme);
+                set_u32(&key, "Scheme Source", 0);
+                set_str(&key, "", scheme);
                 reload_cursors();
             }
             return;
@@ -296,11 +304,11 @@ pub fn apply_cursor_scheme(scheme: &str) {
                         if snap.files[i].is_empty() {
                             let _ = key.delete_value(n);
                         } else {
-                            let _ = key.set_value(n, snap.files[i].as_str());
+                            set_str(&key, n, &snap.files[i]);
                         }
                     }
-                    let _ = key.set_value("Scheme Source", snap.source);
-                    let _ = key.set_value("", snap.name.as_str());
+                    set_u32(&key, "Scheme Source", snap.source);
+                    set_str(&key, "", &snap.name);
                     reload_cursors();
                 }
             }
@@ -313,8 +321,8 @@ pub fn apply_cursor_scheme(scheme: &str) {
         for n in VALUE_NAMES.iter() {
             let _ = key.delete_value(n);
         }
-        let _ = key.set_value("Scheme Source", 0u32);
-        let _ = key.set_value("", "");
+        set_u32(&key, "Scheme Source", 0);
+        set_str(&key, "", "");
         reload_cursors();
     }
 }
