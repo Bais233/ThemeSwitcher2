@@ -23,8 +23,7 @@ fn get_json(path: &str) -> Option<serde_json::Value> {
 }
 
 fn post(path: &str, body: Option<serde_json::Value>) -> bool {
-    let req = ureq::post(&format!("{}{}", BASE, path))
-        .timeout(Duration::from_secs(2));
+    let req = ureq::post(&format!("{}{}", BASE, path)).timeout(Duration::from_secs(2));
     let req = match body {
         Some(v) => req.set("Content-Type", "application/json").send_string(&v.to_string()),
         None => req.send_string(""),
@@ -32,12 +31,12 @@ fn post(path: &str, body: Option<serde_json::Value>) -> bool {
     req.is_ok()
 }
 
-fn save_all(cfg: &serde_json::Value) {
+fn save_all(cfg: serde_json::Value) {
     if SAVING.swap(true, Ordering::SeqCst) {
         return;
     }
     std::thread::spawn(move || {
-        post("/settings", Some(cfg.clone()));
+        post("/settings", Some(cfg));
         SAVING.store(false, Ordering::SeqCst);
     });
 }
@@ -58,17 +57,26 @@ fn main() {
                     .as_array()
                     .map(|a| a.iter().map(|x| x.as_str().unwrap_or("").to_string()).collect())
                     .unwrap_or_default();
+                *SCHEMES.lock().unwrap() = list.clone();
                 if let Some(s) = get_json("/settings") {
                     *CFG.lock().unwrap() = Some(s.clone());
-                    let light_idx = list.iter().position(|x| *x == s["cursorLightScheme"].as_str().unwrap_or(""));
-                    let dark_idx = list.iter().position(|x| *x == s["cursorDarkScheme"].as_str().unwrap_or(""));
+                    let light_idx = list
+                        .iter()
+                        .position(|x| *x == s["cursorLightScheme"].as_str().unwrap_or(""))
+                        .unwrap_or(0);
+                    let dark_idx = list
+                        .iter()
+                        .position(|x| *x == s["cursorDarkScheme"].as_str().unwrap_or(""))
+                        .unwrap_or(0);
                     let _ = slint::invoke_from_event_loop(move || {
                         let Some(ui) = weak.upgrade() else { return };
                         ui.set_schemes(slint::ModelRc::new(slint::VecModel::from(
-                            list.iter().map(|x| x.as_str()).collect::<Vec<_>>(),
+                            list.iter()
+                                .map(|x| slint::SharedString::from(x.as_str()))
+                                .collect::<Vec<slint::SharedString>>(),
                         )));
-                        ui.set_light_idx(light_idx.unwrap_or(0) as i32);
-                        ui.set_dark_idx(dark_idx.unwrap_or(0) as i32);
+                        ui.set_light_idx(light_idx as i32);
+                        ui.set_dark_idx(dark_idx as i32);
                         ui.set_sw_apps(s["switchApps"] == true);
                         ui.set_sw_system(s["switchSystem"] == true);
                         ui.set_sw_cursor(s["switchCursor"] == true);
@@ -81,33 +89,37 @@ fn main() {
         });
     }
 
-    // ---- 回调: 模式切换 / 开关 / 偏移 / 下拉 / 按钮 ----
-    macro_rules! on_cb {
-        ($ui:expr, $name:ident, $body:expr) => {
-            $ui.$name(move |_| $body)
-        };
-    }
+    // ---- 回调 ----
     {
         let weak = weak.clone();
         ui.on_to_light_clicked(move || {
             post("/theme/light", None);
-            if let Some(u) = weak.upgrade() { u.set_light(true); }
+            if let Some(u) = weak.upgrade() {
+                u.set_light(true);
+            }
         });
     }
     {
         let weak = weak.clone();
         ui.on_to_dark_clicked(move || {
             post("/theme/dark", None);
-            if let Some(u) = weak.upgrade() { u.set_light(false); }
+            if let Some(u) = weak.upgrade() {
+                u.set_light(false);
+            }
         });
+    }
+    fn toggle(key: &'static str, v: bool) {
+        if let Some(c) = CFG.lock().unwrap().as_mut() {
+            c[key] = serde_json::Value::Bool(v);
+        }
+        let owned = CFG.lock().unwrap().clone().unwrap_or_default();
+        save_all(owned);
     }
     {
         let weak = weak.clone();
         ui.on_apps_toggled(move || {
             if let Some(u) = weak.upgrade() {
-                let v = u.get_sw_apps();
-                if let Some(c) = CFG.lock().unwrap().as_mut() { c["switchApps"] = serde_json::Value::Bool(v); }
-                save_all(&CFG.lock().unwrap().clone().unwrap_or_default());
+                toggle("switchApps", u.get_sw_apps());
             }
         });
     }
@@ -115,9 +127,7 @@ fn main() {
         let weak = weak.clone();
         ui.on_system_toggled(move || {
             if let Some(u) = weak.upgrade() {
-                let v = u.get_sw_system();
-                if let Some(c) = CFG.lock().unwrap().as_mut() { c["switchSystem"] = serde_json::Value::Bool(v); }
-                save_all(&CFG.lock().unwrap().clone().unwrap_or_default());
+                toggle("switchSystem", u.get_sw_system());
             }
         });
     }
@@ -125,9 +135,7 @@ fn main() {
         let weak = weak.clone();
         ui.on_cursor_toggled(move || {
             if let Some(u) = weak.upgrade() {
-                let v = u.get_sw_cursor();
-                if let Some(c) = CFG.lock().unwrap().as_mut() { c["switchCursor"] = serde_json::Value::Bool(v); }
-                save_all(&CFG.lock().unwrap().clone().unwrap_or_default());
+                toggle("switchCursor", u.get_sw_cursor());
             }
         });
     }
@@ -135,37 +143,62 @@ fn main() {
         let weak = weak.clone();
         ui.on_auto_toggled(move || {
             if let Some(u) = weak.upgrade() {
-                let v = u.get_sw_auto();
-                if let Some(c) = CFG.lock().unwrap().as_mut() { c["autostart"] = serde_json::Value::Bool(v); }
-                save_all(&CFG.lock().unwrap().clone().unwrap_or_default());
+                toggle("autostart", u.get_sw_auto());
             }
         });
     }
-    ui.on_rise_step(move |d| {
-        if let Some(c) = CFG.lock().unwrap().as_mut() {
-            let v = (c["sunriseOffsetMin"].as_i64().unwrap_or(0) + d as i64).clamp(-720, 720);
-            c["sunriseOffsetMin"] = serde_json::Value::from(v);
-            if let Some(ui) = weak.upgrade() { ui.set_rise_off(v as i32); }
-            save_all(&c.clone());
-        }
-    });
-    ui.on_set_step(move |d| {
-        if let Some(c) = CFG.lock().unwrap().as_mut() {
-            let v = (c["sunsetOffsetMin"].as_i64().unwrap_or(0) + d as i64).clamp(-720, 720);
-            c["sunsetOffsetMin"] = serde_json::Value::from(v);
-            if let Some(ui) = weak.upgrade() { ui.set_set_off(v as i32); }
-            save_all(&c.clone());
-        }
-    });
+    {
+        let weak = weak.clone();
+        ui.on_rise_step(move |d| {
+            let v = {
+                let mut guard = CFG.lock().unwrap();
+                if let Some(c) = guard.as_mut() {
+                    let v = (c["sunriseOffsetMin"].as_i64().unwrap_or(0) + d as i64).clamp(-720, 720);
+                    c["sunriseOffsetMin"] = serde_json::Value::from(v);
+                    v
+                } else {
+                    return;
+                }
+            };
+            if let Some(ui) = weak.upgrade() {
+                ui.set_rise_off(v as i32);
+            }
+            let owned = CFG.lock().unwrap().clone().unwrap_or_default();
+            save_all(owned);
+        });
+    }
+    {
+        let weak = weak.clone();
+        ui.on_set_step(move |d| {
+            let v = {
+                let mut guard = CFG.lock().unwrap();
+                if let Some(c) = guard.as_mut() {
+                    let v = (c["sunsetOffsetMin"].as_i64().unwrap_or(0) + d as i64).clamp(-720, 720);
+                    c["sunsetOffsetMin"] = serde_json::Value::from(v);
+                    v
+                } else {
+                    return;
+                }
+            };
+            if let Some(ui) = weak.upgrade() {
+                ui.set_set_off(v as i32);
+            }
+            let owned = CFG.lock().unwrap().clone().unwrap_or_default();
+            save_all(owned);
+        });
+    }
     {
         let weak = weak.clone();
         ui.on_light_scheme_changed(move |idx| {
             let list = SCHEMES.lock().unwrap().clone();
             if let Some(scheme) = list.get(idx as usize) {
-                if let Some(c) = CFG.lock().unwrap().as_mut() { c["cursorLightScheme"] = serde_json::Value::from(scheme.clone()); }
-                save_all(&CFG.lock().unwrap().clone().unwrap_or_default());
+                if let Some(c) = CFG.lock().unwrap().as_mut() {
+                    c["cursorLightScheme"] = serde_json::Value::from(scheme.clone());
+                }
             }
             weak.upgrade().map(|u| u.set_light_idx(idx));
+            let owned = CFG.lock().unwrap().clone().unwrap_or_default();
+            save_all(owned);
         });
     }
     {
@@ -173,16 +206,20 @@ fn main() {
         ui.on_dark_scheme_changed(move |idx| {
             let list = SCHEMES.lock().unwrap().clone();
             if let Some(scheme) = list.get(idx as usize) {
-                if let Some(c) = CFG.lock().unwrap().as_mut() { c["cursorDarkScheme"] = serde_json::Value::from(scheme.clone()); }
-                save_all(&CFG.lock().unwrap().clone().unwrap_or_default());
+                if let Some(c) = CFG.lock().unwrap().as_mut() {
+                    c["cursorDarkScheme"] = serde_json::Value::from(scheme.clone());
+                }
             }
             weak.upgrade().map(|u| u.set_dark_idx(idx));
+            let owned = CFG.lock().unwrap().clone().unwrap_or_default();
+            save_all(owned);
         });
     }
     {
         let weak = weak.clone();
         ui.on_save_clicked(move || {
-            save_all(&CFG.lock().unwrap().clone().unwrap_or_default());
+            let owned = CFG.lock().unwrap().clone().unwrap_or_default();
+            save_all(owned);
         });
     }
     ui.on_open_config_clicked(move || {
@@ -200,18 +237,13 @@ fn main() {
                 std::thread::sleep(Duration::from_secs(1));
                 let Some(st) = get_json("/status") else {
                     let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(ui) = weak.upgrade() { ui.set_engine_ok(false); }
+                        if let Some(ui) = weak.upgrade() {
+                            ui.set_engine_ok(false);
+                        }
                     });
                     continue;
                 };
                 let key = st.to_string();
-                if key == last {
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(ui) = weak.upgrade() { ui.set_engine_ok(true); }
-                    });
-                    continue;
-                }
-                last = key;
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = weak.upgrade() else { return };
                     ui.set_engine_ok(true);
@@ -222,6 +254,7 @@ fn main() {
                     ui.set_sunrise_t(st["sunrise"].as_str().unwrap_or("").into());
                     ui.set_sunset_t(st["sunset"].as_str().unwrap_or("").into());
                 });
+                last = key;
             }
         });
     }

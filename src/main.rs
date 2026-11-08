@@ -1,4 +1,5 @@
-// ThemeSwitcher2 寮曟搸 鈥?鎵樼洏甯搁┗, 鎸夋棩鍑烘棩钀借嚜鍔ㄥ垏鎹㈡繁娴呰壊涓庨紶鏍囨寚閽?// 鍏变韩鏍稿績鍦?lib.rs(tauri 浠〃鐩樺鐢?; 鏈枃浠跺彧绠℃墭鐩樹笌蹇冭烦
+// ThemeSwitcher2 引擎 — 托盘常驻, 按日出日落自动切换深浅色与鼠标指针
+// 共享核心在 lib.rs(仪表盘二进制 src/bin/ui.rs 复用); 本文件只管托盘与心跳
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod tray;
@@ -7,7 +8,7 @@ use chrono::{DateTime, Local};
 use std::time::{Duration, Instant, SystemTime};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoop};
-use crate::{controller, cursor, location, settings, sun, theme, RESOLVED_LATLON};
+use themeswitcher2::{controller, cursor, location, settings, sun, theme, RESOLVED_LATLON};
 use tray_icon::menu::MenuEvent;
 
 fn main() {
@@ -15,13 +16,15 @@ fn main() {
     cursor::capture_active_cursor();
     let mut current_light = theme::sync_current_theme();
 
-    // 瀹氫綅浼樺厛绾? 鍧愭爣 > 鍦板悕(鑱旂綉瑙ｆ瀽涓€娆? > IP 鑷姩(鑱旂綉涓€娆?
+    // 定位优先级: 坐标 > 地名(联网解析一次) > IP 自动(联网一次)
     let s = settings::get();
     let latlon = resolve_latlon(&s.location);
     *RESOLVED_LATLON.lock().unwrap() = latlon.clone();
     drop(s);
 
-    // 寮€鏈鸿ˉ璇? 鍚姩鏃跺厛鎶婁富棰樺榻愬埌褰撳墠鏃跺埢搴旀湁鐨勭姸鎬?    let s = settings::get();
+    // 开机补课: 启动时先把主题对齐到当前时刻应有的状态
+    // (错过日出/日落才开机时, 也能立刻回到正确模式)
+    let s = settings::get();
     if let Some(should) = sun::current_light_for(
         &latlon,
         s.sunrise_offset_min,
@@ -34,7 +37,7 @@ fn main() {
         }
     }
 
-    // 鏈満鎺у埗鎺ュ彛(Flutter 浠〃鐩樼殑鏁版嵁婧?
+    // 本机控制接口(仪表盘 UI 的数据源)
     std::thread::spawn(controller::serve);
 
     let event_loop = EventLoop::new();
@@ -47,7 +50,8 @@ fn main() {
     let mut last_text = String::new();
 
     event_loop.run(move |event, _, control_flow| {
-        // 1 绉掑績璺?        *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_secs(1));
+        // 1 秒心跳
+        *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_secs(1));
 
         let Event::NewEvents(cause) = event else { return };
         if !matches!(
@@ -59,7 +63,7 @@ fn main() {
 
         let now = Local::now();
 
-        // 鎵樼洏鑿滃崟浜嬩欢
+        // 托盘菜单事件
         while let Ok(ev) = menu_rx.try_recv() {
             if ev.id() == m.to_light.id() {
                 theme::set_theme(true);
@@ -81,7 +85,7 @@ fn main() {
                     .arg(settings::config_path())
                     .spawn();
             } else if ev.id() == m.reload.id() {
-                last_cfg = SystemTime::UNIX_EPOCH; // 寮哄埗涓嬮潰閲嶈
+                last_cfg = SystemTime::UNIX_EPOCH; // 强制下面重读
             } else if ev.id() == m.quit.id() {
                 let _ = tray_obj.set_visible(false);
                 *control_flow = ControlFlow::Exit;
@@ -92,7 +96,8 @@ fn main() {
             return;
         }
 
-        // 閰嶇疆鏂囦欢鐑噸杞?        let mt = settings::timestamp();
+        // 配置文件热重载(别的编辑器改了 ini 也能跟上); UI 的 reload 请求也在这里消费
+        let mt = settings::timestamp();
         if mt != last_cfg || controller::consume_reload() {
             last_cfg = mt;
             settings::set(settings::load());
@@ -102,15 +107,16 @@ fn main() {
 
         let s = settings::get();
 
-        // 璁＄畻涓嬫鍒囨崲鏃跺埢
+        // 计算下次切换时刻
         if next.is_none() {
             next = Some(match sun::next_event(&latlon, s.sunrise_offset_min, s.sunset_offset_min, now)
             {
                 Ok(v) => v,
-                Err(_) => (now + chrono::Duration::minutes(30), false), // 鎷夸笉鍒版暟鎹? 30 鍒嗛挓鍚庨噸璇?            });
+                Err(_) => (now + chrono::Duration::minutes(30), false), // 拿不到数据: 30 分钟后重试
+            });
         }
 
-        // 鍒扮偣鍒囨崲
+        // 到点切换
         if let Some((when, light)) = next {
             if now >= when {
                 theme::set_theme(light);
@@ -119,25 +125,26 @@ fn main() {
             }
         }
 
-        // 璺熼殢鐢ㄦ埛鍦ㄧ郴缁熻缃噷鐨勬墜鍔ㄤ慨鏀?        current_light = theme::sync_current_theme();
+        // 跟随用户在系统设置里的手动修改
+        current_light = theme::sync_current_theme();
 
-        // 鐘舵€佽(浠呭彉鍖栨椂鍒锋柊, 閬垮厤鑿滃崟閲嶇粯闂儊)
-        let mode = if current_light { "娴呰壊妯″紡" } else { "娣辫壊妯″紡" };
+        // 状态行(仅变化时刷新, 避免菜单重绘闪烁)
+        let mode = if current_light { "浅色模式" } else { "深色模式" };
         let next_txt = match next {
             Some((t, l)) => format!(
-                "涓嬫鍒囨崲 {} 鈫?{}",
+                "下次切换 {} → {}",
                 t.format("%H:%M"),
-                if l { "娴呰壊" } else { "娣辫壊" }
+                if l { "浅色" } else { "深色" }
             ),
-            None => "涓嬫鍒囨崲 鑾峰彇涓€?.to_string(),
+            None => "下次切换 获取中…".to_string(),
         };
-        let text = format!("{} 路 {}", mode, next_txt);
+        let text = format!("{} · {}", mode, next_txt);
         if text != last_text {
             m.status.set_text(text.clone());
             last_text = text;
         }
 
-        // 寮曟搸鐘舵€佸悓姝ョ粰鎺у埗鎺ュ彛
+        // 引擎状态同步给控制接口
         let (next_when, next_light) = match next {
             Some((t, l)) => (t.format("%H:%M").to_string(), l),
             None => (String::new(), false),
