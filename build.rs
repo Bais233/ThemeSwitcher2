@@ -5,4 +5,5 @@ fn main() {
         res.set_icon("assets/app.ico");
         res.compile().expect("failed to embed app.ico");
     }
+    slint_build::compile("ui/dashboard.slint").expect("failed to compile Slint UI");
 }

@@ -5,9 +5,17 @@ edition = "2021"
 description = "ThemeSwitcher2 — 按日出日落自动切换 Windows 深色/浅色模式与鼠标指针(Rust 重写版)"
 license = "MIT"
 
+[lib]
+name = "themeswitcher2"
+path = "src/lib.rs"
+
 [[bin]]
 name = "ThemeSwitcher2"
 path = "src/main.rs"
+
+[[bin]]
+name = "ThemeSwitcher2-UI"
+path = "src/bin/ui.rs"
 
 [dependencies]
 tao = "0.30"
@@ -17,9 +25,14 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Wind
 ureq = "2"
 image = { version = "0.25", default-features = false, features = ["ico", "png"] }
 chrono = "0.4"
+tiny_http = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+slint = "1.8"
 
 [build-dependencies]
 winresource = "0.1"
+slint-build = "1.8"
 
 [profile.release]
 opt-level = "z"

@@ -18,7 +18,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ThemeSwitcher2
-          path: target/release/ThemeSwitcher2.exe
+          path: |
+            target/release/ThemeSwitcher2.exe
+            target/release/ThemeSwitcher2-UI.exe
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
