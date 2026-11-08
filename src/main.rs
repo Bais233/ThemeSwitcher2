@@ -1,5 +1,4 @@
 // ThemeSwitcher2 引擎 — 托盘常驻, 按日出日落自动切换深浅色与鼠标指针
-// 共享核心在 lib.rs(tauri 仪表盘复用); 本文件只管托盘与心跳
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod tray;
@@ -8,7 +7,6 @@ use chrono::{DateTime, Local};
 use std::time::{Duration, Instant, SystemTime};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoop};
-use themeswitcher2::{controller, cursor, location, settings, sun, theme, RESOLVED_LATLON};
 use tray_icon::menu::MenuEvent;
 
 fn main() {
@@ -19,10 +17,10 @@ fn main() {
     // 定位优先级: 坐标 > 地名(联网解析一次) > IP 自动(联网一次)
     let s = settings::get();
     let latlon = resolve_latlon(&s.location);
-    *RESOLVED_LATLON.lock().unwrap() = latlon.clone();
     drop(s);
 
     // 开机补课: 启动时先把主题对齐到当前时刻应有的状态
+    // (错过日出/日落才开机时, 也能立刻回到正确模式)
     let s = settings::get();
     if let Some(should) = sun::current_light_for(
         &latlon,
@@ -35,9 +33,6 @@ fn main() {
             current_light = should;
         }
     }
-
-    // 本机控制接口(Flutter 仪表盘的数据源)
-    std::thread::spawn(controller::serve);
 
     let event_loop = EventLoop::new();
     let (tray_obj, m) = tray::build();
@@ -95,9 +90,9 @@ fn main() {
             return;
         }
 
-        // 配置文件热重载
+        // 配置文件热重载(别的编辑器改了 ini 也能跟上)
         let mt = settings::timestamp();
-        if mt != last_cfg || controller::consume_reload() {
+        if mt != last_cfg {
             last_cfg = mt;
             settings::set(settings::load());
             next = None;
@@ -142,17 +137,6 @@ fn main() {
             m.status.set_text(text.clone());
             last_text = text;
         }
-
-        // 引擎状态同步给控制接口
-        let (next_when, next_light) = match next {
-            Some((t, l)) => (t.format("%H:%M").to_string(), l),
-            None => (String::new(), false),
-        };
-        *controller::ENGINE.write().unwrap() = controller::EngineStatus {
-            light: current_light,
-            next_when,
-            next_light,
-        };
     });
 }
 

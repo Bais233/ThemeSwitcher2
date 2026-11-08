@@ -4,8 +4,7 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::SystemTime;
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[derive(Clone, Debug)]
 pub struct Settings {
     pub switch_apps: bool,
     pub switch_system: bool,
