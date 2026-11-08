@@ -2,6 +2,7 @@
 // 架构: tao 事件循环(托盘消息泵) + 1 秒心跳, 无后台线程
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod controller;
 mod cursor;
 mod location;
 mod settings;
@@ -10,10 +11,15 @@ mod theme;
 mod tray;
 
 use chrono::{DateTime, Local};
+use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoop};
 use tray_icon::menu::MenuEvent;
+
+// 引擎状态(controller HTTP 线程读)与解析后的定位(启动时写一次)
+pub static ENGINE_STATE: RwLock<controller::EngineStatus> = RwLock::new(controller::EngineStatus::default());
+pub static RESOLVED_LATLON: Mutex<String> = Mutex::new(String::new());
 
 fn main() {
     settings::init();
@@ -23,6 +29,7 @@ fn main() {
     // 定位优先级: 坐标 > 地名(联网解析一次) > IP 自动(联网一次)
     let s = settings::get();
     let latlon = resolve_latlon(&s.location);
+    *RESOLVED_LATLON.lock().unwrap() = latlon.clone();
     drop(s);
 
     // 开机补课: 启动时先把主题对齐到当前时刻应有的状态
@@ -39,6 +46,9 @@ fn main() {
             current_light = should;
         }
     }
+
+    // 本机控制接口(Flutter 仪表盘的数据源)
+    std::thread::spawn(controller::serve);
 
     let event_loop = EventLoop::new();
     let (tray_obj, m) = tray::build();
@@ -62,6 +72,11 @@ fn main() {
         }
 
         let now = Local::now();
+
+        // 控制接口触发的心跳重算(POST /settings|/reload 后)
+        if controller::consume_reload() {
+            last_cfg = SystemTime::UNIX_EPOCH;
+        }
 
         // 托盘菜单事件
         while let Ok(ev) = menu_rx.try_recv() {
@@ -143,6 +158,17 @@ fn main() {
             m.status.set_text(text.clone());
             last_text = text;
         }
+
+        // 引擎状态同步给控制接口
+        let (next_when, next_light) = match next {
+            Some((t, l)) => (t.format("%H:%M").to_string(), l),
+            None => (String::new(), false),
+        };
+        *controller::ENGINE.write().unwrap() = controller::EngineStatus {
+            light: current_light,
+            next_when,
+            next_light,
+        };
     });
 }
 
