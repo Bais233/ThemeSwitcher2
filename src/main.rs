@@ -1,29 +1,15 @@
-// ThemeSwitcher2 — 按日出日落自动切换 Windows 深色/浅色模式与鼠标指针(Rust 版)
-// 架构: tao 事件循环(托盘消息泵) + 1 秒心跳, 无后台线程
+// ThemeSwitcher2 引擎 — 托盘常驻, 按日出日落自动切换深浅色与鼠标指针
+// 共享核心在 lib.rs(tauri 仪表盘复用); 本文件只管托盘与心跳
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod controller;
-mod cursor;
-mod location;
-mod settings;
-mod sun;
-mod theme;
 mod tray;
 
 use chrono::{DateTime, Local};
-use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoop};
+use themeswitcher2::{controller, cursor, location, settings, sun, theme, RESOLVED_LATLON};
 use tray_icon::menu::MenuEvent;
-
-// 引擎状态(controller HTTP 线程读)与解析后的定位(启动时写一次)
-pub static ENGINE_STATE: RwLock<controller::EngineStatus> = RwLock::new(controller::EngineStatus {
-    light: true,
-    next_when: String::new(),
-    next_light: false,
-});
-pub static RESOLVED_LATLON: Mutex<String> = Mutex::new(String::new());
 
 fn main() {
     settings::init();
@@ -37,7 +23,6 @@ fn main() {
     drop(s);
 
     // 开机补课: 启动时先把主题对齐到当前时刻应有的状态
-    // (错过日出/日落才开机时, 也能立刻回到正确模式)
     let s = settings::get();
     if let Some(should) = sun::current_light_for(
         &latlon,
@@ -77,11 +62,6 @@ fn main() {
 
         let now = Local::now();
 
-        // 控制接口触发的心跳重算(POST /settings|/reload 后)
-        if controller::consume_reload() {
-            last_cfg = SystemTime::UNIX_EPOCH;
-        }
-
         // 托盘菜单事件
         while let Ok(ev) = menu_rx.try_recv() {
             if ev.id() == m.to_light.id() {
@@ -115,9 +95,9 @@ fn main() {
             return;
         }
 
-        // 配置文件热重载(别的编辑器改了 ini 也能跟上)
+        // 配置文件热重载
         let mt = settings::timestamp();
-        if mt != last_cfg {
+        if mt != last_cfg || controller::consume_reload() {
             last_cfg = mt;
             settings::set(settings::load());
             next = None;

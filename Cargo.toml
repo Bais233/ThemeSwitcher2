@@ -5,9 +5,16 @@ edition = "2021"
 description = "ThemeSwitcher2 — 按日出日落自动切换 Windows 深色/浅色模式与鼠标指针(Rust 重写版)"
 license = "MIT"
 
+[workspace]
+members = ["tauri-app/src-tauri"]
+
 [[bin]]
 name = "ThemeSwitcher2"
 path = "src/main.rs"
+
+[lib]
+name = "themeswitcher2"
+path = "src/lib.rs"
 
 [dependencies]
 tao = "0.30"
