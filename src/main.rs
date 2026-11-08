@@ -1,6 +1,11 @@
 // ThemeSwitcher2 引擎 — 托盘常驻, 按日出日落自动切换深浅色与鼠标指针
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cursor;
+mod location;
+mod settings;
+mod sun;
+mod theme;
 mod tray;
 
 use chrono::{DateTime, Local};
