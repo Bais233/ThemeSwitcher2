@@ -2,6 +2,7 @@
 // 复用引擎 crate(themeswitcher2)的核心逻辑; 窗口玻璃 = CSS + Win10 亚克力(window-vibrancy)
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use tauri::Manager;
 use themeswitcher2::{controller, cursor, location, settings, sun, theme, RESOLVED_LATLON};
 
 #[tauri::command]

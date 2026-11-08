@@ -1,6 +1,6 @@
 // sun.rs — 日出日落本地计算(NOAA 天文算法, 精度约 1 分钟, 不依赖网络)
 // 与 sunrise-sunset.org 同一套公式; 时区按系统本地时区换算
-use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, Utc};
 
 pub fn get_sun_event(latlon: &str, sunrise: bool, day_offset: i64) -> Result<DateTime<Local>, String> {
     let date = Local::now().date_naive() + chrono::Duration::days(day_offset);
