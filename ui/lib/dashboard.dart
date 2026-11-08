@@ -278,7 +278,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(height: 12),
                 Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                   Text('下次切换 $nextWhen',
-                      style: TextStyle(fontSize: 26, fontWeight: FontWeight.w650,
+                      style: TextStyle(fontSize: 26, fontWeight: FontWeight.w600,
                           color: cs.onSurface, letterSpacing: .2)),
                   const SizedBox(width: 8),
                   Padding(
