@@ -10,7 +10,7 @@ use tiny_http::{Header, Method, Response, Server};
 pub const PORT: u16 = 27125;
 
 // 引擎心跳每秒写入, HTTP 线程只读
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct EngineStatus {
     pub light: bool,
     pub next_when: String, // "HH:MM", 空串 = 获取中
@@ -40,7 +40,7 @@ pub fn serve() {
         Err(_) => return, // 端口被占: 放弃接口, 托盘功能不受影响
     };
     let json_hdr = Header::from_bytes("Content-Type", "application/json").unwrap();
-    for request in server.incoming_requests() {
+    for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let url = request.url().trim_end_matches('/').to_string();
         let body = {
@@ -104,7 +104,7 @@ pub fn serve() {
 
         let resp = Response::from_string(payload)
             .with_status_code(code)
-            .with_header(json_hdr);
+            .with_header(json_hdr.clone());
         let _ = request.respond(resp);
     }
 }
