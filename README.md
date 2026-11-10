@@ -12,17 +12,17 @@
 
 ## 使用
 
-下载:GitHub Actions 的 artifact,或 tag 的 Release。
+从 [Releases](https://github.com/Bais233/ThemeSwitcher2/releases) 下载(或 Actions artifact),两个文件:
 
-```text
-ThemeSwitcher2.exe        # 启动托盘,按 settings.ini 的 Location 定位
-```
+- `ThemeSwitcher2.exe` — 引擎:启动托盘常驻,按 settings.ini 的 Location 定位
+- `ThemeSwitcher2-UI.exe` — 可选的图形设置界面:与引擎放同一目录,托盘菜单"设置界面…"直接打开
 
 托盘右键菜单:
 
 - 当前状态(灰字,实时刷新)
 - 切换到浅色模式 / 切换到深色模式
 - 开机自启(勾选)
+- 设置界面…(打开图形设置)
 - 打开配置文件 / 重读配置
 - 退出
 

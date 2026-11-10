@@ -33,4 +33,6 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/ThemeSwitcher2.exe
+          files: |
+            target/release/ThemeSwitcher2.exe
+            target/release/ThemeSwitcher2-UI.exe

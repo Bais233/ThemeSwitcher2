@@ -80,6 +80,13 @@ fn main() {
                 s.autostart = on;
                 settings::set(s.clone());
                 settings::save(&s);
+            } else if ev.id() == m.settings_ui.id() {
+                // UI 与引擎同目录分发; 没带 UI 的环境点了没反应, 托盘功能不受影响
+                if let Ok(exe) = std::env::current_exe() {
+                    if let Some(dir) = exe.parent() {
+                        let _ = std::process::Command::new(dir.join("ThemeSwitcher2-UI.exe")).spawn();
+                    }
+                }
             } else if ev.id() == m.open_config.id() {
                 let _ = std::process::Command::new("notepad.exe")
                     .arg(settings::config_path())

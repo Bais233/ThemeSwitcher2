@@ -7,6 +7,7 @@ pub struct MenuHandles {
     pub to_light: MenuItem,
     pub to_dark: MenuItem,
     pub autostart: CheckMenuItem,
+    pub settings_ui: MenuItem,
     pub open_config: MenuItem,
     pub reload: MenuItem,
     pub quit: MenuItem,
@@ -25,6 +26,7 @@ pub fn build() -> (TrayIcon, MenuHandles) {
     let to_light = MenuItem::new("切换到浅色模式", true, None);
     let to_dark = MenuItem::new("切换到深色模式", true, None);
     let autostart = CheckMenuItem::new("开机自启", true, false, None);
+    let settings_ui = MenuItem::new("设置界面…", true, None);
     let open_config = MenuItem::new("打开配置文件", true, None);
     let reload = MenuItem::new("重读配置", true, None);
     let quit = MenuItem::new("退出", true, None);
@@ -37,6 +39,7 @@ pub fn build() -> (TrayIcon, MenuHandles) {
         &to_dark,
         &PredefinedMenuItem::separator(),
         &autostart,
+        &settings_ui,
         &open_config,
         &reload,
         &PredefinedMenuItem::separator(),
@@ -57,6 +60,7 @@ pub fn build() -> (TrayIcon, MenuHandles) {
             to_light,
             to_dark,
             autostart,
+            settings_ui,
             open_config,
             reload,
             quit,
