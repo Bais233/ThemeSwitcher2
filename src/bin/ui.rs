@@ -36,7 +36,13 @@ fn save_all(cfg: serde_json::Value) {
         return;
     }
     std::thread::spawn(move || {
-        post("/settings", Some(cfg));
+        if !post("/settings", Some(cfg.clone())) {
+            // 引擎不在线: 直接落盘兜底, 引擎下次启动/热重载会读到
+            // ponytail: 不重试 POST; 引擎活着时不会走到这里
+            if let Ok(s) = serde_json::from_value::<themeswitcher2::settings::Settings>(cfg) {
+                themeswitcher2::settings::save(&s);
+            }
+        }
         SAVING.store(false, Ordering::SeqCst);
     });
 }

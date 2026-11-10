@@ -8,7 +8,7 @@ use chrono::{DateTime, Local};
 use std::time::{Duration, Instant, SystemTime};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoop};
-use themeswitcher2::{controller, cursor, location, settings, sun, theme, RESOLVED_LATLON};
+use themeswitcher2::{controller, cursor, location, settings, sun, theme, ENGINE_STATE, RESOLVED_LATLON};
 use tray_icon::menu::MenuEvent;
 
 fn main() {
@@ -149,7 +149,7 @@ fn main() {
             Some((t, l)) => (t.format("%H:%M").to_string(), l),
             None => (String::new(), false),
         };
-        *controller::ENGINE.write().unwrap() = controller::EngineStatus {
+        *ENGINE_STATE.write().unwrap() = controller::EngineStatus {
             light: current_light,
             next_when,
             next_light,

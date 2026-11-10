@@ -4,7 +4,6 @@ use crate::settings;
 use crate::theme;
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::RwLock;
 use tiny_http::{Header, Method, Response, Server};
 
 pub const PORT: u16 = 27125;
@@ -16,12 +15,6 @@ pub struct EngineStatus {
     pub next_when: String, // "HH:MM", 空串 = 获取中
     pub next_light: bool,
 }
-
-pub static ENGINE: RwLock<EngineStatus> = RwLock::new(EngineStatus {
-    light: true,
-    next_when: String::new(),
-    next_light: false,
-});
 
 // UI/接口触发的重算请求, 心跳消费后清零
 pub static RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
