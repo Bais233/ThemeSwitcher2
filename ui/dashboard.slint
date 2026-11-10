@@ -13,6 +13,8 @@ export component Dashboard inherits Window {
     in property <string> sunrise-t;
     in property <string> sunset-t;
     in property <bool> engine-ok;
+    in-out property <bool> save-ok;
+    in-out property <bool> save-flash;
     in property <[string]> schemes;
     in-out property <bool> sw-apps;
     in-out property <bool> sw-system;
@@ -148,6 +150,13 @@ export component Dashboard inherits Window {
         HorizontalLayout {
             spacing: 10px;
             Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: root.save-ok ? "已保存" : "保存失败，已写入配置文件";
+                visible: root.save-flash;
+                color: root.save-ok ? #34d399 : #ef4444;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
             Button { text: "打开配置文件"; clicked => { root.open-config-clicked(); } }
             Button { text: "保存"; primary: true; clicked => { root.save-clicked(); } }
         }

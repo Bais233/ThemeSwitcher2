@@ -31,12 +31,13 @@ fn post(path: &str, body: Option<serde_json::Value>) -> bool {
     req.is_ok()
 }
 
-fn save_all(cfg: serde_json::Value) {
+fn save_all(weak: slint::Weak<Dashboard>, cfg: serde_json::Value) {
     if SAVING.swap(true, Ordering::SeqCst) {
         return;
     }
     std::thread::spawn(move || {
-        if !post("/settings", Some(cfg.clone())) {
+        let ok = post("/settings", Some(cfg.clone()));
+        if !ok {
             // 引擎不在线: 直接落盘兜底, 引擎下次启动/热重载会读到
             // ponytail: 不重试 POST; 引擎活着时不会走到这里
             if let Ok(s) = serde_json::from_value::<themeswitcher2::settings::Settings>(cfg) {
@@ -44,6 +45,17 @@ fn save_all(cfg: serde_json::Value) {
             }
         }
         SAVING.store(false, Ordering::SeqCst);
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_save_ok(ok);
+                ui.set_save_flash(true);
+            }
+            slint::Timer::single_shot(Duration::from_secs(3), move || {
+                if let Some(ui) = weak.upgrade() {
+                    ui.set_save_flash(false);
+                }
+            });
+        });
     });
 }
 
@@ -114,18 +126,18 @@ fn main() {
             }
         });
     }
-    fn toggle(key: &'static str, v: bool) {
+    fn toggle(weak: &slint::Weak<Dashboard>, key: &'static str, v: bool) {
         if let Some(c) = CFG.lock().unwrap().as_mut() {
             c[key] = serde_json::Value::Bool(v);
         }
         let owned = CFG.lock().unwrap().clone().unwrap_or_default();
-        save_all(owned);
+        save_all(weak.clone(), owned);
     }
     {
         let weak = weak.clone();
         ui.on_apps_toggled(move || {
             if let Some(u) = weak.upgrade() {
-                toggle("switchApps", u.get_sw_apps());
+                toggle(&weak, "switchApps", u.get_sw_apps());
             }
         });
     }
@@ -133,7 +145,7 @@ fn main() {
         let weak = weak.clone();
         ui.on_system_toggled(move || {
             if let Some(u) = weak.upgrade() {
-                toggle("switchSystem", u.get_sw_system());
+                toggle(&weak, "switchSystem", u.get_sw_system());
             }
         });
     }
@@ -141,7 +153,7 @@ fn main() {
         let weak = weak.clone();
         ui.on_cursor_toggled(move || {
             if let Some(u) = weak.upgrade() {
-                toggle("switchCursor", u.get_sw_cursor());
+                toggle(&weak, "switchCursor", u.get_sw_cursor());
             }
         });
     }
@@ -149,7 +161,7 @@ fn main() {
         let weak = weak.clone();
         ui.on_auto_toggled(move || {
             if let Some(u) = weak.upgrade() {
-                toggle("autostart", u.get_sw_auto());
+                toggle(&weak, "autostart", u.get_sw_auto());
             }
         });
     }
@@ -170,7 +182,7 @@ fn main() {
                 ui.set_rise_off(v as i32);
             }
             let owned = CFG.lock().unwrap().clone().unwrap_or_default();
-            save_all(owned);
+            save_all(weak.clone(), owned);
         });
     }
     {
@@ -190,7 +202,7 @@ fn main() {
                 ui.set_set_off(v as i32);
             }
             let owned = CFG.lock().unwrap().clone().unwrap_or_default();
-            save_all(owned);
+            save_all(weak.clone(), owned);
         });
     }
     {
@@ -204,7 +216,7 @@ fn main() {
             }
             weak.upgrade().map(|u| u.set_light_idx(idx));
             let owned = CFG.lock().unwrap().clone().unwrap_or_default();
-            save_all(owned);
+            save_all(weak.clone(), owned);
         });
     }
     {
@@ -218,14 +230,14 @@ fn main() {
             }
             weak.upgrade().map(|u| u.set_dark_idx(idx));
             let owned = CFG.lock().unwrap().clone().unwrap_or_default();
-            save_all(owned);
+            save_all(weak.clone(), owned);
         });
     }
     {
         let weak = weak.clone();
         ui.on_save_clicked(move || {
             let owned = CFG.lock().unwrap().clone().unwrap_or_default();
-            save_all(owned);
+            save_all(weak.clone(), owned);
         });
     }
     ui.on_open_config_clicked(move || {
