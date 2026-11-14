@@ -106,12 +106,12 @@ export component Dashboard inherits Window {
                 VerticalLayout {
                     spacing: 2px;
                     Text { text: "浅色"; font-size: 12px; color: #888; horizontal-alignment: center; }
-                    SpinBox { min-width: 90px; minimum: -720; maximum: 720; value <=> root.rise-off; changed => { root.rise-changed(self.value); } }
+                    SpinBox { min-width: 90px; minimum: -720; maximum: 720; value <=> root.rise-off; changed value => { root.rise-changed(root.rise-off); } }
                 }
                 VerticalLayout {
                     spacing: 2px;
                     Text { text: "深色"; font-size: 12px; color: #888; horizontal-alignment: center; }
-                    SpinBox { min-width: 90px; minimum: -720; maximum: 720; value <=> root.set-off; changed => { root.sunset-changed(self.value); } }
+                    SpinBox { min-width: 90px; minimum: -720; maximum: 720; value <=> root.set-off; changed value => { root.sunset-changed(root.set-off); } }
                 }
             }
         }
