@@ -12,6 +12,12 @@ use themeswitcher2::{controller, cursor, location, settings, sun, theme, ENGINE_
 use tray_icon::menu::MenuEvent;
 
 fn main() {
+    // 单 exe 双模式: 无参 = 托盘引擎(常驻), --ui = 独立进程跑设置界面
+    // 仍是两个进程: UI 崩溃不影响引擎, 引擎自启不弹窗
+    if std::env::args().any(|a| a == "--ui") {
+        themeswitcher2::ui::run();
+        return;
+    }
     settings::init();
     cursor::capture_active_cursor();
     let mut current_light = theme::sync_current_theme();
@@ -81,11 +87,9 @@ fn main() {
                 settings::set(s.clone());
                 settings::save(&s);
             } else if ev.id() == m.settings_ui.id() {
-                // UI 与引擎同目录分发; 没带 UI 的环境点了没反应, 托盘功能不受影响
+                // 启动自身 --ui 模式(独立进程)
                 if let Ok(exe) = std::env::current_exe() {
-                    if let Some(dir) = exe.parent() {
-                        let _ = std::process::Command::new(dir.join("ThemeSwitcher2-UI.exe")).spawn();
-                    }
+                    let _ = std::process::Command::new(exe).arg("--ui").spawn();
                 }
             } else if ev.id() == m.open_config.id() {
                 let _ = std::process::Command::new("notepad.exe")

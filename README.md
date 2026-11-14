@@ -8,14 +8,13 @@
 - 深浅色各挂一个**鼠标指针方案**:支持注册表方案 + `C:\Windows\Cursors` 下未注册的社区指针包(自动识别角色)
 - 指针包只写识别到的角色,未识别的保持现状,**绝不静默覆盖你的指针**
 - 定位:IP 自动 / 坐标 / 地名(Nominatim)
-- 单 exe,无运行时依赖;设置存 `%APPDATA%\ThemeSwitcher2\settings.ini`
+- 单 exe 双模式(引擎/`--ui` 界面),无运行时依赖;设置存 `%APPDATA%\ThemeSwitcher2\settings.ini`
 
 ## 使用
 
-从 [Releases](https://github.com/Bais233/ThemeSwitcher2/releases) 下载(或 Actions artifact),两个文件:
+从 [Releases](https://github.com/Bais233/ThemeSwitcher2/releases) 下载(或 Actions artifact),单文件:
 
-- `ThemeSwitcher2.exe` — 引擎:启动托盘常驻,按 settings.ini 的 Location 定位
-- `ThemeSwitcher2-UI.exe` — 可选的图形设置界面:与引擎放同一目录,托盘菜单"设置界面…"直接打开
+- `ThemeSwitcher2.exe` — 直接运行即托盘常驻;托盘菜单"设置界面…"打开图形设置(同一 exe 以 `--ui` 参数启动独立界面进程)
 
 托盘右键菜单:
 

@@ -1,7 +1,6 @@
 // ui.rs — ThemeSwitcher2 玻璃仪表盘(Slint 软件渲染版)
-// 数据源: 引擎 exe 的本机控制接口 127.0.0.1:27125
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
+// 数据源: 引擎的本机控制接口 127.0.0.1:27125
+// 以独立进程运行: main.rs 收到 --ui 参数后调用 run(); 与引擎进程互不影响
 slint::include_modules!();
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -40,8 +39,8 @@ fn save_all(weak: slint::Weak<Dashboard>, cfg: serde_json::Value) {
         if !ok {
             // 引擎不在线: 直接落盘兜底, 引擎下次启动/热重载会读到
             // ponytail: 不重试 POST; 引擎活着时不会走到这里
-            if let Ok(s) = serde_json::from_value::<themeswitcher2::settings::Settings>(cfg) {
-                themeswitcher2::settings::save(&s);
+            if let Ok(s) = serde_json::from_value::<crate::settings::Settings>(cfg) {
+                crate::settings::save(&s);
             }
         }
         SAVING.store(false, Ordering::SeqCst);
@@ -59,7 +58,7 @@ fn save_all(weak: slint::Weak<Dashboard>, cfg: serde_json::Value) {
     });
 }
 
-fn main() {
+pub fn run() {
     // 强制软件渲染: GT730 上零 GPU 依赖
     std::env::set_var("SLINT_BACKEND", "software");
 
@@ -242,7 +241,7 @@ fn main() {
     }
     ui.on_open_config_clicked(move || {
         let _ = std::process::Command::new("notepad.exe")
-            .arg(themeswitcher2::settings::config_path())
+            .arg(crate::settings::config_path())
             .spawn();
     });
 

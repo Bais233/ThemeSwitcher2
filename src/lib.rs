@@ -6,6 +6,7 @@ pub mod location;
 pub mod settings;
 pub mod sun;
 pub mod theme;
+pub mod ui;
 
 use std::sync::{Mutex, RwLock};
 
