@@ -100,6 +100,13 @@ pub fn run() {
                         ui.set_sw_auto(s["autostart"] == true);
                         ui.set_rise_off(s["sunriseOffsetMin"].as_i64().unwrap_or(0) as i32);
                         ui.set_set_off(s["sunsetOffsetMin"].as_i64().unwrap_or(0) as i32);
+                        // 推迟时长档位: 15/30/60/120/240/480
+                        let mins = s["snoozeMinutes"].as_i64().unwrap_or(15);
+                        let snooze_idx = [15i64, 30, 60, 120, 240, 480]
+                            .iter()
+                            .position(|&m| m == mins)
+                            .unwrap_or(0) as i32;
+                        ui.set_snooze_idx(snooze_idx);
                     });
                 }
             }
@@ -166,11 +173,11 @@ pub fn run() {
     }
     {
         let weak = weak.clone();
-        ui.on_rise_step(move |d| {
+        ui.on_rise_changed(move |v| {
             let v = {
                 let mut guard = CFG.lock().unwrap();
                 if let Some(c) = guard.as_mut() {
-                    let v = (c["sunriseOffsetMin"].as_i64().unwrap_or(0) + d as i64).clamp(-720, 720);
+                    let v = v.clamp(-720, 720);
                     c["sunriseOffsetMin"] = serde_json::Value::from(v);
                     v
                 } else {
@@ -178,7 +185,7 @@ pub fn run() {
                 }
             };
             if let Some(ui) = weak.upgrade() {
-                ui.set_rise_off(v as i32);
+                ui.set_rise_off(v);
             }
             let owned = CFG.lock().unwrap().clone().unwrap_or_default();
             save_all(weak.clone(), owned);
@@ -186,11 +193,11 @@ pub fn run() {
     }
     {
         let weak = weak.clone();
-        ui.on_set_step(move |d| {
+        ui.on_sunset_changed(move |v| {
             let v = {
                 let mut guard = CFG.lock().unwrap();
                 if let Some(c) = guard.as_mut() {
-                    let v = (c["sunsetOffsetMin"].as_i64().unwrap_or(0) + d as i64).clamp(-720, 720);
+                    let v = v.clamp(-720, 720);
                     c["sunsetOffsetMin"] = serde_json::Value::from(v);
                     v
                 } else {
@@ -198,10 +205,44 @@ pub fn run() {
                 }
             };
             if let Some(ui) = weak.upgrade() {
-                ui.set_set_off(v as i32);
+                ui.set_set_off(v);
             }
             let owned = CFG.lock().unwrap().clone().unwrap_or_default();
             save_all(weak.clone(), owned);
+        });
+    }
+    {
+        // 推迟时长档位(分钟): 15/30/60/120/240/480
+        const DUR: [i64; 6] = [15, 30, 60, 120, 240, 480];
+        let weak = weak.clone();
+        ui.on_snooze_dur_changed(move |idx| {
+            if let Some(c) = CFG.lock().unwrap().as_mut() {
+                c["snoozeMinutes"] = serde_json::Value::from(DUR[idx.clamp(0, 5) as usize]);
+            }
+            let owned = CFG.lock().unwrap().clone().unwrap_or_default();
+            save_all(weak.clone(), owned);
+        });
+    }
+    {
+        let weak = weak.clone();
+        ui.on_snooze_toggled(move |on| {
+            let minutes = {
+                let guard = CFG.lock().unwrap();
+                guard.as_ref()
+                    .and_then(|c| c["snoozeMinutes"].as_i64())
+                    .unwrap_or(15)
+            };
+            let ok = if on {
+                post("/snooze", Some(serde_json::json!({ "minutes": minutes })))
+            } else {
+                post("/snooze/clear", None)
+            };
+            if !ok {
+                // 引擎不在线: 开关立刻回弹, 状态行由轮询刷新为未推迟
+                if let Some(ui) = weak.upgrade() {
+                    ui.set_snooze_active(false);
+                }
+            }
         });
     }
     {
@@ -269,6 +310,9 @@ pub fn run() {
                 ui.set_loc(st["locationResolved"].as_str().unwrap_or("").into());
                 ui.set_sunrise_t(st["sunrise"].as_str().unwrap_or("").into());
                 ui.set_sunset_t(st["sunset"].as_str().unwrap_or("").into());
+                ui.set_snooze_active(st["snoozeActive"] == true);
+                ui.set_snooze_until(st["snoozeUntil"].as_str().unwrap_or("").into());
+                ui.set_snooze_remain_min(st["snoozeRemainMin"].as_i64().unwrap_or(0).to_string().into());
             });
         });
     }

@@ -1,9 +1,11 @@
 // controller.rs — 本机 JSON 控制接口(127.0.0.1:27125), 供仪表盘 UI 调用
-// 端点: GET /status | GET+POST /settings | POST /theme/light|dark | GET /schemes | POST /reload
+// 端点: GET /status | GET+POST /settings | POST /theme/light|dark | GET /schemes | POST /snooze|/snooze/clear | POST /reload
 use crate::settings;
 use crate::theme;
+use crate::SNOOZE_UNTIL;
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 use tiny_http::{Header, Method, Response, Server};
 
 pub const PORT: u16 = 27125;
@@ -55,6 +57,18 @@ pub fn serve() {
                     },
                     Err(_) => (String::new(), String::new()),
                 };
+                // 推迟状态: 剩余分钟(向上取整, 至少 1)
+                let guard = SNOOZE_UNTIL.lock().unwrap();
+                let snoozing = guard.map(|t| Instant::now() < t);
+                let (snooze_until, snooze_remain) = match snoozing {
+                    Some(true) => {
+                        let left = guard.unwrap().saturating_duration_since(Instant::now());
+                        let until = chrono::Local::now() + chrono::Duration::from_std(left).unwrap_or_default();
+                        (until.format("%H:%M").to_string(), (left.as_secs() + 59) / 60)
+                    }
+                    _ => (String::new(), 0),
+                };
+                drop(guard);
                 (
                     200,
                     json!({
@@ -64,6 +78,9 @@ pub fn serve() {
                         "locationResolved": lat,
                         "sunrise": sunrise,
                         "sunset": sunset,
+                        "snoozeActive": snoozing.unwrap_or(false),
+                        "snoozeUntil": snooze_until,
+                        "snoozeRemainMin": snooze_remain,
                         "engine": "running",
                     })
                     .to_string(),
@@ -97,6 +114,23 @@ pub fn serve() {
                 (200, json!({ "ok": true, "light": false }).to_string())
             }
             (Method::Get, "/schemes") => (200, cursor_schemes_json()),
+            (Method::Post, "/snooze") => {
+                // body: {"minutes": 15} — 只认正数, 上限 8 小时
+                let minutes = serde_json::from_str::<serde_json::Value>(&body)
+                    .ok()
+                    .and_then(|v| v["minutes"].as_i64())
+                    .unwrap_or(0);
+                if !(1..=480).contains(&minutes) {
+                    (400, json!({ "ok": false, "error": "minutes must be 1..=480" }).to_string())
+                } else {
+                    *SNOOZE_UNTIL.lock().unwrap() = Some(Instant::now() + std::time::Duration::from_secs(minutes as u64 * 60));
+                    (200, json!({ "ok": true, "minutes": minutes }).to_string())
+                }
+            }
+            (Method::Post, "/snooze/clear") => {
+                *SNOOZE_UNTIL.lock().unwrap() = None;
+                (200, json!({ "ok": true }).to_string())
+            }
             (Method::Post, "/reload") => {
                 request_reload();
                 (200, json!({ "ok": true }).to_string())

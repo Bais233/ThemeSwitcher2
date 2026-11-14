@@ -8,7 +8,7 @@ use chrono::{DateTime, Local};
 use std::time::{Duration, Instant, SystemTime};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoop};
-use themeswitcher2::{controller, cursor, location, settings, sun, theme, ENGINE_STATE, RESOLVED_LATLON};
+use themeswitcher2::{controller, cursor, location, settings, sun, theme, ENGINE_STATE, RESOLVED_LATLON, SNOOZE_UNTIL};
 use tray_icon::menu::MenuEvent;
 
 fn main() {
@@ -127,9 +127,20 @@ fn main() {
             });
         }
 
-        // 到点切换
+        // 到点切换(推迟中跳过: 错过的事件留在 next 里, 推迟到期后下一秒补课对齐)
+        let snoozing = {
+            let mut g = SNOOZE_UNTIL.lock().unwrap();
+            match *g {
+                Some(t) if Instant::now() < t => true,
+                Some(_) => {
+                    *g = None; // 过期清理
+                    false
+                }
+                None => false,
+            }
+        };
         if let Some((when, light)) = next {
-            if now >= when {
+            if now >= when && !snoozing {
                 theme::set_theme(light);
                 current_light = light;
                 next = None;
