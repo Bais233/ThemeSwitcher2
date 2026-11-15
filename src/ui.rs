@@ -63,6 +63,10 @@ pub fn run() {
     std::env::set_var("SLINT_BACKEND", "software");
 
     let ui = Dashboard::new().unwrap();
+    // 渲染/调试: SLINT_DARK=1 强制深色(默认跟随系统)
+    if std::env::var("SLINT_DARK").is_ok() {
+        ui.window().set_dark_light_mode(slint::DarkLightMode::Dark);
+    }
     let weak = ui.as_weak();
 
     // ---- 初始数据拉取(后台线程) ----
