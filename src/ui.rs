@@ -61,12 +61,12 @@ fn save_all(weak: slint::Weak<Dashboard>, cfg: serde_json::Value) {
 pub fn run() {
     // 强制软件渲染: GT730 上零 GPU 依赖
     std::env::set_var("SLINT_BACKEND", "software");
+    // 渲染/调试: SLINT_DARK=1 强制深色样式(默认跟随系统); 须在编译 UI 前设置
+    if std::env::var("SLINT_DARK").is_ok() && std::env::var("SLINT_STYLE").is_err() {
+        std::env::set_var("SLINT_STYLE", "fluent-dark");
+    }
 
     let ui = Dashboard::new().unwrap();
-    // 渲染/调试: SLINT_DARK=1 强制深色(默认跟随系统)
-    if std::env::var("SLINT_DARK").is_ok() {
-        ui.window().set_dark_light_mode(slint::DarkLightMode::Dark);
-    }
     let weak = ui.as_weak();
 
     // ---- 初始数据拉取(后台线程) ----
