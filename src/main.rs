@@ -54,6 +54,8 @@ fn main() {
     let mut next: Option<(DateTime<Local>, bool)> = None;
     let mut last_cfg = settings::timestamp();
     let mut last_text = String::new();
+    // 最近一次真正写主题的时刻: 偏差纠正的节流基准, 避免与用户操作来回拉锯
+    let mut last_set = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
         // 1 秒心跳
@@ -75,10 +77,12 @@ fn main() {
                 theme::set_theme(true);
                 current_light = true;
                 next = None;
+                last_set = Instant::now();
             } else if ev.id() == m.to_dark.id() {
                 theme::set_theme(false);
                 current_light = false;
                 next = None;
+                last_set = Instant::now();
             } else if ev.id() == m.autostart.id() {
                 let on = m.autostart.is_checked();
                 theme::set_autostart(on);
@@ -112,6 +116,7 @@ fn main() {
         if mt != last_cfg || controller::consume_reload() {
             last_cfg = mt;
             settings::set(settings::load());
+            cursor::invalidate_pack_cache(); // 装了新指针包后重扫, 不必重启程序
             next = None;
             m.autostart.set_checked(theme::get_autostart());
         }
@@ -144,11 +149,27 @@ fn main() {
                 theme::set_theme(light);
                 current_light = light;
                 next = None;
+                last_set = Instant::now();
             }
         }
 
         // 跟随用户在系统设置里的手动修改
         current_light = theme::sync_current_theme();
+
+        // 持续校验: 当前主题与此刻应有的不符(手动改动/外部程序/休眠恢复)时纠正。
+        // 到点切换只是"事件驱动", 光靠它会让错误状态一直持续到下一个日出/日落。
+        // 5 秒节流避免与用户操作来回抖动; 推迟期间完全不动。
+        if !snoozing {
+            if let Some(should) =
+                sun::current_light_for(&latlon, s.sunrise_offset_min, s.sunset_offset_min, now)
+            {
+                if should != current_light && last_set.elapsed() >= Duration::from_secs(5) {
+                    theme::set_theme(should);
+                    current_light = should;
+                    last_set = Instant::now();
+                }
+            }
+        }
 
         // 状态行(仅变化时刷新, 避免菜单重绘闪烁)
         let mode = if current_light { "浅色模式" } else { "深色模式" };

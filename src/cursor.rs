@@ -1,7 +1,7 @@
 // cursor.rs — 鼠标指针方案切换: 注册表方案(HKCU/HKLM) + 未注册指针包(C:\Windows\Cursors 文件夹)
 // 原理: 写 HKCU\Control Panel\Cursors 的 14 个角色值, SystemParametersInfo(SPI_SETCURSORS) 立即生效
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 use winreg::enums::*;
 use winreg::RegKey;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -47,7 +47,8 @@ pub struct ActiveSnapshot {
 }
 
 static ACTIVE: OnceLock<Option<ActiveSnapshot>> = OnceLock::new();
-static PACK_DIRS: OnceLock<HashMap<String, String>> = OnceLock::new();
+// 可失效的包目录缓存: 用户新装指针包后不必重启程序(见 invalidate_pack_cache)
+static PACK_DIRS: RwLock<Option<HashMap<String, String>>> = RwLock::new(None);
 
 pub fn capture_active_cursor() {
     if ACTIVE.get().is_some() {
@@ -111,37 +112,49 @@ pub fn get_cursor_schemes() -> Vec<String> {
     list
 }
 
-fn pack_dirs() -> &'static HashMap<String, String> {
-    PACK_DIRS.get_or_init(|| {
-        let mut map = HashMap::new();
-        if let Ok(rd) = std::fs::read_dir(CURSORS_DIR) {
-            let mut dirs: Vec<_> = rd.flatten().collect();
-            dirs.sort_by_key(|e| e.file_name());
-            for d in dirs {
-                let path = d.path();
-                if !path.is_dir() {
-                    continue;
-                }
-                // 父目录与子目录都注册为可选方案:
-                // 旧配置里存的就是「包名 子目录」形式(W11_light_v2.2 base),
-                // 不注册子目录会让已存的设置失效、切不回去。
-                // 半套指针的问题由 match_pack_files 的兄弟目录补齐解决。
-                try_add_pack(&path, None, &mut map);
-                if let Ok(subs) = std::fs::read_dir(&path) {
-                    let mut subs: Vec<_> = subs.flatten().collect();
-                    subs.sort_by_key(|e| e.file_name());
-                    for s in subs {
-                        let spath = s.path();
-                        if spath.is_dir() {
-                            let parent = d.file_name().to_string_lossy().to_string();
-                            try_add_pack(&spath, Some(&parent), &mut map);
-                        }
+fn pack_dirs() -> HashMap<String, String> {
+    if let Some(m) = PACK_DIRS.read().unwrap().as_ref() {
+        return m.clone();
+    }
+    let built = scan_pack_dirs();
+    *PACK_DIRS.write().unwrap() = Some(built.clone());
+    built
+}
+
+// 装了新指针包后调用: 下次查询重新扫描 C:\Windows\Cursors
+pub fn invalidate_pack_cache() {
+    *PACK_DIRS.write().unwrap() = None;
+}
+
+fn scan_pack_dirs() -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    if let Ok(rd) = std::fs::read_dir(CURSORS_DIR) {
+        let mut dirs: Vec<_> = rd.flatten().collect();
+        dirs.sort_by_key(|e| e.file_name());
+        for d in dirs {
+            let path = d.path();
+            if !path.is_dir() {
+                continue;
+            }
+            // 父目录与子目录都注册为可选方案:
+            // 旧配置里存的就是「包名 子目录」形式(W11_light_v2.2 base),
+            // 不注册子目录会让已存的设置失效、切不回去。
+            // 半套指针的问题由 match_pack_files 的兄弟目录补齐解决。
+            try_add_pack(&path, None, &mut map);
+            if let Ok(subs) = std::fs::read_dir(&path) {
+                let mut subs: Vec<_> = subs.flatten().collect();
+                subs.sort_by_key(|e| e.file_name());
+                for s in subs {
+                    let spath = s.path();
+                    if spath.is_dir() {
+                        let parent = d.file_name().to_string_lossy().to_string();
+                        try_add_pack(&spath, Some(&parent), &mut map);
                     }
                 }
             }
         }
-        map
-    })
+    }
+    map
 }
 
 fn try_add_pack(path: &std::path::Path, parent: Option<&str>, map: &mut HashMap<String, String>) {
