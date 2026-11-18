@@ -2,27 +2,30 @@
 
 按**日出日落**自动切换 Windows 深色/浅色模式与鼠标指针方案的托盘工具。Rust 重写版,原 C# 版见 [ThemeSwitcher](https://github.com/Bais233/ThemeSwitcher)。
 
+| 浅色 | 深色 |
+|---|---|
+| ![浅色模式界面](assets/ui-light.png) | ![深色模式界面](assets/ui-dark.png) |
+
 - 托盘常驻,日出切浅色、日落切深色(各支持 ±720 分钟偏移)
 - **启动补课**:错过事件才开机也会立刻对齐到当前时刻应有的模式
 - **本地 NOAA 天文计算**,核心切换零网络依赖(联网仅用于定位)
 - 深浅色各挂一个**鼠标指针方案**:支持注册表方案 + `C:\Windows\Cursors` 下未注册的社区指针包(自动识别角色)
 - 指针包只写识别到的角色,未识别的保持现状,**绝不静默覆盖你的指针**
 - 定位:IP 自动 / 坐标 / 地名(Nominatim)
-- 单 exe,无运行时依赖;设置存 `%APPDATA%\ThemeSwitcher2\settings.ini`
+- 单 exe 双模式(引擎/`--ui` 界面),无运行时依赖;设置存 `%APPDATA%\ThemeSwitcher2\settings.ini`
 
 ## 使用
 
-下载:GitHub Actions 的 artifact,或 tag 的 Release。
+从 [Releases](https://github.com/Bais233/ThemeSwitcher2/releases) 下载(或 Actions artifact),单文件:
 
-```text
-ThemeSwitcher2.exe        # 启动托盘,按 settings.ini 的 Location 定位
-```
+- `ThemeSwitcher2.exe` — 直接运行即托盘常驻;托盘菜单"设置界面…"打开图形设置(同一 exe 以 `--ui` 参数启动独立界面进程)
 
 托盘右键菜单:
 
 - 当前状态(灰字,实时刷新)
 - 切换到浅色模式 / 切换到深色模式
 - 开机自启(勾选)
+- 设置界面…(打开图形设置)
 - 打开配置文件 / 重读配置
 - 退出
 

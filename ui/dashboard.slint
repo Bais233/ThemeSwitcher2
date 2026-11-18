@@ -1,0 +1,210 @@
+// dashboard.slint — ThemeSwitcher2 简单设置界面(标准控件版)
+import { ComboBox, Button, Switch, GroupBox, SpinBox } from "std-widgets.slint";
+
+export component Dashboard inherits Window {
+    title: "ThemeSwitcher2";
+    preferred-width: 520px;
+    preferred-height: 700px;
+
+    in property <bool> light;
+    in property <string> next-when;
+    in property <bool> next-light;
+    in property <string> loc;
+    in property <string> sunrise-t;
+    in property <string> sunset-t;
+    in property <bool> engine-ok;
+    in-out property <bool> save-ok;
+    in-out property <bool> save-flash;
+    in property <[string]> schemes;
+    in-out property <bool> sw-apps;
+    in-out property <bool> sw-system;
+    in-out property <bool> sw-cursor;
+    in-out property <bool> sw-auto;
+    in-out property <int> rise-off;
+    in-out property <int> set-off;
+    in-out property <int> light-idx;
+    in-out property <int> dark-idx;
+    in-out property <int> snooze-idx;
+    in property <bool> snooze-active;
+    in property <string> snooze-until;
+    in property <string> snooze-remain-min;
+
+    callback to-light-clicked();
+    callback to-dark-clicked();
+    callback apps-toggled();
+    callback system-toggled();
+    callback cursor-toggled();
+    callback auto-toggled();
+    callback rise-changed(int);
+    callback sunset-changed(int);
+    callback snooze-toggled(bool);
+    callback snooze-dur-changed(int);
+    callback light-scheme-changed(int);
+    callback dark-scheme-changed(int);
+    callback save-clicked();
+    callback open-config-clicked();
+
+    VerticalLayout {
+        padding: 20px;
+        spacing: 14px;
+
+        // ===== 状态 =====
+        HorizontalLayout {
+            spacing: 10px;
+            Rectangle {
+                width: 10px; height: 10px; border-radius: 5px; y: 5px;
+                background: engine-ok ? (light ? #34d399 : #f59e0b) : #ef4444;
+            }
+            Text {
+                text: engine-ok
+                    ? "当前: " + (light ? "浅色" : "深色") + " · 下次切换 " + (next-when == "" ? "--:--" : next-when) + " → " + (next-light ? "浅色" : "深色")
+                    : "引擎未响应";
+                vertical-alignment: center;
+                font-size: 14px;
+            }
+        }
+        HorizontalLayout {
+            spacing: 20px;
+            Text { text: "定位: " + (loc == "" ? "获取中…" : loc); font-size: 12px; color: #888; vertical-alignment: center; }
+            Text { text: "日出: " + (sunrise-t == "" ? "…" : sunrise-t); font-size: 12px; color: #888; vertical-alignment: center; }
+            Text { text: "日落: " + (sunset-t == "" ? "…" : sunset-t); font-size: 12px; color: #888; vertical-alignment: center; }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            Button { text: "切到浅色"; clicked => { root.to-light-clicked(); } }
+            Button { text: "切到深色"; clicked => { root.to-dark-clicked(); } }
+        }
+
+        // ===== 主题 =====
+        GroupBox {
+            title: "主题";
+            VerticalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "应用主题 (UWP / 资源管理器)"; vertical-alignment: center; width: 220px; }
+                    Switch { checked <=> root.sw-apps; toggled => { root.apps-toggled(); } }
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "系统主题 (任务栏 / 开始菜单)"; vertical-alignment: center; width: 220px; }
+                    Switch { checked <=> root.sw-system; toggled => { root.system-toggled(); } }
+                }
+            }
+        }
+
+        // ===== 调整 =====
+        GroupBox {
+            title: "调整";
+            HorizontalLayout {
+                spacing: 20px;
+                VerticalLayout {
+                    spacing: 2px;
+                    Text { text: "延迟切换（分钟）"; vertical-alignment: center; }
+                    Text { text: "正值推迟生效，负值表示提前"; font-size: 11px; color: #888; vertical-alignment: center; }
+                }
+                VerticalLayout {
+                    spacing: 2px;
+                    Text { text: "浅色"; font-size: 12px; color: #888; horizontal-alignment: center; }
+                    SpinBox { min-width: 90px; minimum: -720; maximum: 720; value <=> root.rise-off; changed value => { root.rise-changed(root.rise-off); } }
+                }
+                VerticalLayout {
+                    spacing: 2px;
+                    Text { text: "深色"; font-size: 12px; color: #888; horizontal-alignment: center; }
+                    SpinBox { min-width: 90px; minimum: -720; maximum: 720; value <=> root.set-off; changed value => { root.sunset-changed(root.set-off); } }
+                }
+            }
+        }
+
+        // ===== 推迟控制 =====
+        GroupBox {
+            title: "推迟控制";
+            VerticalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    ComboBox {
+                        min-width: 110px;
+                        model: ["15 分钟", "30 分钟", "1 小时", "2 小时", "4 小时", "8 小时"];
+                        current-index <=> root.snooze-idx;
+                        selected => { root.snooze-dur-changed(self.current-index); }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text {
+                        text: root.snooze-active ? "推迟中" : "未推迟";
+                        vertical-alignment: center;
+                        color: root.snooze-active ? #f59e0b : #888;
+                    }
+                    Switch { toggled => { root.snooze-toggled(self.checked); } checked: root.snooze-active; }
+                }
+                Text {
+                    text: root.snooze-active
+                        ? "生效的推迟: 至 " + root.snooze-until + "（剩 " + root.snooze-remain-min + " 分钟）期间不自动切换"
+                        : "生效的推迟: 无 — 自动主题切换已启用";
+                    font-size: 12px;
+                    color: #888;
+                }
+            }
+        }
+
+        // ===== 指针 =====
+        GroupBox {
+            title: "鼠标指针";
+            VerticalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "浅色方案"; vertical-alignment: center; width: 100px; }
+                    ComboBox {
+                        min-width: 260px;
+                        model: root.schemes;
+                        current-index <=> root.light-idx;
+                        selected => { root.light-scheme-changed(self.current-index); }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "深色方案"; vertical-alignment: center; width: 100px; }
+                    ComboBox {
+                        min-width: 260px;
+                        model: root.schemes;
+                        current-index <=> root.dark-idx;
+                        selected => { root.dark-scheme-changed(self.current-index); }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "跟随主题自动切换指针"; vertical-alignment: center; width: 220px; }
+                    Switch { checked <=> root.sw-cursor; toggled => { root.cursor-toggled(); } }
+                }
+            }
+        }
+
+        // ===== 通用 =====
+        GroupBox {
+            title: "通用";
+            VerticalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "开机自启 (HKCU Run)"; vertical-alignment: center; width: 220px; }
+                    Switch { checked <=> root.sw-auto; toggled => { root.auto-toggled(); } }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 10px;
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: root.save-ok ? "已保存" : "保存失败，已写入配置文件";
+                visible: root.save-flash;
+                color: root.save-ok ? #34d399 : #ef4444;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+            Button { text: "打开配置文件"; clicked => { root.open-config-clicked(); } }
+            Button { text: "保存"; primary: true; clicked => { root.save-clicked(); } }
+        }
+    }
+}

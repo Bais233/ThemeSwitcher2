@@ -1,7 +1,7 @@
 // cursor.rs — 鼠标指针方案切换: 注册表方案(HKCU/HKLM) + 未注册指针包(C:\Windows\Cursors 文件夹)
 // 原理: 写 HKCU\Control Panel\Cursors 的 14 个角色值, SystemParametersInfo(SPI_SETCURSORS) 立即生效
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 use winreg::enums::*;
 use winreg::RegKey;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -27,7 +27,7 @@ static ROLE_ALIASES: [&[&str]; 14] = [
     &["help-select", "help", "帮助选择", "帮助"],
     &["working", "appstarting", "后台运行", "后台"],
     &["busy", "wait", "忙", "beachball"],
-    &["crosshair", "cross", "精确选择"],
+    &["crosshair", "cross", "精确选择", "precision", "precision-select"],
     &["text-select", "text", "ibeam", "文本选择", "beam"],
     &["handwriting", "手写", "pen"],
     &["unavailable", "不可用", "no"],
@@ -47,7 +47,8 @@ pub struct ActiveSnapshot {
 }
 
 static ACTIVE: OnceLock<Option<ActiveSnapshot>> = OnceLock::new();
-static PACK_DIRS: OnceLock<HashMap<String, String>> = OnceLock::new();
+// 可失效的包目录缓存: 用户新装指针包后不必重启程序(见 invalidate_pack_cache)
+static PACK_DIRS: RwLock<Option<HashMap<String, String>>> = RwLock::new(None);
 
 pub fn capture_active_cursor() {
     if ACTIVE.get().is_some() {
@@ -55,7 +56,7 @@ pub fn capture_active_cursor() {
     }
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let snapshot = hkcu.open_subkey(CURSORS_KEY).map(|key| {
-        let mut files = [String::new(); 14];
+        let mut files: [String; 14] = Default::default();
         for (i, n) in VALUE_NAMES.iter().enumerate() {
             files[i] = key.get_value::<String, _>(n).unwrap_or_default();
         }
@@ -74,6 +75,14 @@ pub fn get_current_cursor_scheme() -> Option<String> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let key = hkcu.open_subkey(CURSORS_KEY).ok()?;
     key.get_value::<String, _>("").ok()
+}
+
+// winreg 0.52 的 set_value 要求值传引用; 封装两种常用类型
+fn set_str(key: &RegKey, name: &str, value: &str) {
+    let _ = key.set_value(name, &value.to_string());
+}
+fn set_u32(key: &RegKey, name: &str, value: u32) {
+    let _ = key.set_value(name, &value);
 }
 
 pub fn get_cursor_schemes() -> Vec<String> {
@@ -103,49 +112,54 @@ pub fn get_cursor_schemes() -> Vec<String> {
     list
 }
 
-fn pack_dirs() -> &'static HashMap<String, String> {
-    PACK_DIRS.get_or_init(|| {
-        let mut map = HashMap::new();
-        if let Ok(rd) = std::fs::read_dir(CURSORS_DIR) {
-            let mut dirs: Vec<_> = rd.flatten().collect();
-            dirs.sort_by_key(|e| e.file_name());
-            for d in dirs {
-                let path = d.path();
-                if path.is_dir() {
-                    try_add_pack(&path, None, &mut map);
-                    if let Ok(subs) = std::fs::read_dir(&path) {
-                        let mut subs: Vec<_> = subs.flatten().collect();
-                        subs.sort_by_key(|e| e.file_name());
-                        for s in subs {
-                            let spath = s.path();
-                            if spath.is_dir() {
-                                let parent = d.file_name().to_string_lossy().to_string();
-                                try_add_pack(&spath, Some(&parent), &mut map);
-                            }
-                        }
+fn pack_dirs() -> HashMap<String, String> {
+    if let Some(m) = PACK_DIRS.read().unwrap().as_ref() {
+        return m.clone();
+    }
+    let built = scan_pack_dirs();
+    *PACK_DIRS.write().unwrap() = Some(built.clone());
+    built
+}
+
+// 装了新指针包后调用: 下次查询重新扫描 C:\Windows\Cursors
+pub fn invalidate_pack_cache() {
+    *PACK_DIRS.write().unwrap() = None;
+}
+
+fn scan_pack_dirs() -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    if let Ok(rd) = std::fs::read_dir(CURSORS_DIR) {
+        let mut dirs: Vec<_> = rd.flatten().collect();
+        dirs.sort_by_key(|e| e.file_name());
+        for d in dirs {
+            let path = d.path();
+            if !path.is_dir() {
+                continue;
+            }
+            // 父目录与子目录都注册为可选方案:
+            // 旧配置里存的就是「包名 子目录」形式(W11_light_v2.2 base),
+            // 不注册子目录会让已存的设置失效、切不回去。
+            // 半套指针的问题由 match_pack_files 的兄弟目录补齐解决。
+            try_add_pack(&path, None, &mut map);
+            if let Ok(subs) = std::fs::read_dir(&path) {
+                let mut subs: Vec<_> = subs.flatten().collect();
+                subs.sort_by_key(|e| e.file_name());
+                for s in subs {
+                    let spath = s.path();
+                    if spath.is_dir() {
+                        let parent = d.file_name().to_string_lossy().to_string();
+                        try_add_pack(&spath, Some(&parent), &mut map);
                     }
                 }
             }
         }
-        map
-    })
+    }
+    map
 }
 
 fn try_add_pack(path: &std::path::Path, parent: Option<&str>, map: &mut HashMap<String, String>) {
-    let mut count = 0;
-    if let Ok(rd) = std::fs::read_dir(path) {
-        for e in rd.flatten() {
-            let ext = e
-                .path()
-                .extension()
-                .and_then(|x| x.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            if ext == "ani" || ext == "cur" {
-                count += 1;
-            }
-        }
-    }
+    // 递归统计: W11 这类包把指针拆进 base/ + sunset/ 子目录, 只数本层会误判为不可用
+    let count = collect_cursor_files(path, true).len();
     if count < 3 {
         return; // 至少 3 个指针文件才算可用的包
     }
@@ -167,24 +181,50 @@ pub fn scan_cursor_pack_names() -> Vec<String> {
     names
 }
 
-fn match_pack_files(dir: &str) -> Option<[Option<String>; 14]> {
-    let mut result: [Option<String>; 14] = Default::default();
-    let mut claimed: HashSet<String> = HashSet::new();
-    let rd = std::fs::read_dir(dir).ok()?;
-    let mut files: Vec<std::path::PathBuf> = Vec::new();
-    for e in rd.flatten() {
+fn collect_cursor_files(dir: &std::path::Path, recursive: bool) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let Ok(rd) = std::fs::read_dir(dir) else { return out };
+    let mut entries: Vec<_> = rd.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for e in entries {
         let p = e.path();
+        if p.is_dir() {
+            if recursive {
+                out.extend(collect_cursor_files(&p, true));
+            }
+            continue;
+        }
         let ext = p
             .extension()
             .and_then(|x| x.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
         if ext == "ani" || ext == "cur" {
-            files.push(p);
+            out.push(p);
         }
     }
+    out
+}
+
+fn match_pack_files(dir: &str) -> Option<[Option<String>; 14]> {
+    let mut result: [Option<String>; 14] = Default::default();
+    let mut claimed: HashSet<String> = HashSet::new();
+    let dir_path = std::path::Path::new(dir);
+    let mut files: Vec<std::path::PathBuf> = collect_cursor_files(dir_path, false);
     if files.is_empty() {
         return None;
+    }
+    // 指针包作者常把静态/动画指针拆进子目录(如 W11 的 base/ + sunset/)。
+    // 只扫本层会漏掉 working/busy, 于是切换后那几个角色残留上一套方案 -> 两套指针混用。
+    // 本层优先, 缺失的用同一包内其余子目录补齐; 不跨包。
+    if let Some(parent) = dir_path.parent() {
+        if parent != std::path::Path::new(CURSORS_DIR) {
+            for f in collect_cursor_files(parent, true) {
+                if !files.iter().any(|x| x == &f) {
+                    files.push(f);
+                }
+            }
+        }
     }
     // 认领顺序: 专属别名多的角色先挑, 防止 Arrow 的泛化别名抢走 up-arrow 的文件
     let order: [usize; 14] = [12, 13, 4, 5, 6, 7, 3, 2, 8, 9, 10, 11, 1, 0];
@@ -217,6 +257,14 @@ fn match_pack_files(dir: &str) -> Option<[Option<String>; 14]> {
                 break;
             }
         }
+        // 认领不到的角色不写入 = 保留上一套方案的指针, 桌面会出现两套混用。
+        // 不强行兜底(那会静默换成不相干的图), 但要让问题可见。
+        if result[role].is_none() {
+            eprintln!(
+                "[cursor] 包 {:?} 未识别出角色 {}, 该角色将保持原样",
+                dir, VALUE_NAMES[role]
+            );
+        }
     }
     Some(result)
 }
@@ -241,7 +289,7 @@ fn enable_theme_changes_mouse_pointers() {
     if let Ok(key) = hkcu.open_subkey_with_flags(THEMES_KEY, KEY_SET_VALUE | KEY_QUERY_VALUE) {
         if let Ok(v) = key.get_value::<u32, _>("ThemeChangesMousePointers") {
             if v == 0 {
-                let _ = key.set_value("ThemeChangesMousePointers", 1u32);
+                set_u32(&key, "ThemeChangesMousePointers", 1);
             }
         }
     }
@@ -261,11 +309,11 @@ pub fn apply_cursor_scheme(scheme: &str) {
             if let Ok(key) = hkcu.open_subkey_with_flags(CURSORS_KEY, KEY_SET_VALUE | KEY_QUERY_VALUE) {
                 for (i, n) in VALUE_NAMES.iter().enumerate() {
                     if let Some(f) = &files[i] {
-                        let _ = key.set_value(n, f.as_str());
+                        set_str(&key, n, f);
                     }
                 }
-                let _ = key.set_value("Scheme Source", 0u32);
-                let _ = key.set_value("", scheme);
+                set_u32(&key, "Scheme Source", 0);
+                set_str(&key, "", scheme);
                 reload_cursors();
             }
             return;
@@ -278,12 +326,12 @@ pub fn apply_cursor_scheme(scheme: &str) {
                     if i < parts.len() {
                         let f = parts[i].trim().trim_matches('"');
                         if !f.is_empty() {
-                            let _ = key.set_value(n, f);
+                            set_str(&key, n, f);
                         }
                     }
                 }
-                let _ = key.set_value("Scheme Source", 0u32);
-                let _ = key.set_value("", scheme);
+                set_u32(&key, "Scheme Source", 0);
+                set_str(&key, "", scheme);
                 reload_cursors();
             }
             return;
@@ -296,11 +344,11 @@ pub fn apply_cursor_scheme(scheme: &str) {
                         if snap.files[i].is_empty() {
                             let _ = key.delete_value(n);
                         } else {
-                            let _ = key.set_value(n, snap.files[i].as_str());
+                            set_str(&key, n, &snap.files[i]);
                         }
                     }
-                    let _ = key.set_value("Scheme Source", snap.source);
-                    let _ = key.set_value("", snap.name.as_str());
+                    set_u32(&key, "Scheme Source", snap.source);
+                    set_str(&key, "", &snap.name);
                     reload_cursors();
                 }
             }
@@ -313,8 +361,8 @@ pub fn apply_cursor_scheme(scheme: &str) {
         for n in VALUE_NAMES.iter() {
             let _ = key.delete_value(n);
         }
-        let _ = key.set_value("Scheme Source", 0u32);
-        let _ = key.set_value("", "");
+        set_u32(&key, "Scheme Source", 0);
+        set_str(&key, "", "");
         reload_cursors();
     }
 }
@@ -322,5 +370,50 @@ pub fn apply_cursor_scheme(scheme: &str) {
 fn reload_cursors() {
     unsafe {
         SystemParametersInfoW(SPI_SETCURSORS, 0, std::ptr::null_mut(), SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 回归: 指针包把静态/动画指针拆进子目录时(如 W11 的 base/ + sunset/),
+    // 只扫本层会漏掉 working/busy, 切换后那几个角色残留上一套方案 -> 两套指针混用。
+    // 测试用临时目录构造同样的结构, 不依赖本机是否装了特定指针包。
+    #[test]
+    fn subdir_pack_fills_roles_from_sibling_dirs() {
+        let root = std::env::temp_dir().join("ts2_cursor_pack_test");
+        let _ = std::fs::remove_dir_all(&root);
+        let base = root.join("base");
+        let sunset = root.join("sunset");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&sunset).unwrap();
+
+        for n in ["pointer", "help", "precision", "beam", "handwriting", "unavailable",
+                  "vert", "horz", "dgn1", "dgn2", "alternate", "link"] {
+            std::fs::write(base.join(format!("{}.cur", n)), b"x").unwrap();
+        }
+        for n in ["working", "busy"] {
+            std::fs::write(sunset.join(format!("{}.ani", n)), b"x").unwrap();
+        }
+
+        let matched = match_pack_files(&root.to_string_lossy()).unwrap();
+        let count = matched.iter().filter(|x| x.is_some()).count();
+        assert_eq!(
+            count, 14,
+            "14 个角色都应匹配到; 实际 {:?}",
+            VALUE_NAMES
+                .iter()
+                .zip(matched.iter())
+                .filter(|(_, v)| v.is_none())
+                .map(|(n, _)| *n)
+                .collect::<Vec<_>>()
+        );
+
+        // 动画指针必须来自 sunset 子目录
+        let working = matched[2].as_ref().expect("AppStarting 未匹配");
+        assert!(working.contains("sunset"), "AppStarting 应取自 sunset/: {}", working);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

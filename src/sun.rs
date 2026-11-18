@@ -1,6 +1,6 @@
 // sun.rs — 日出日落本地计算(NOAA 天文算法, 精度约 1 分钟, 不依赖网络)
 // 与 sunrise-sunset.org 同一套公式; 时区按系统本地时区换算
-use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, Utc};
 
 pub fn get_sun_event(latlon: &str, sunrise: bool, day_offset: i64) -> Result<DateTime<Local>, String> {
     let date = Local::now().date_naive() + chrono::Duration::days(day_offset);
@@ -48,8 +48,16 @@ fn compute_sun_event_local(latlon: &str, sunrise: bool, date: NaiveDate) -> Opti
     let ut_hours = h + ra - 0.06571 * t - 6.622 - lng_hour;
     let utc_ndt: NaiveDateTime =
         date.and_hms_opt(0, 0, 0)? + chrono::Duration::minutes((ut_hours * 60.0).round() as i64);
-    let dt = DateTime::<Utc>::from_naive_utc_and_offset(utc_ndt, Utc);
-    Some(dt.with_timezone(&Local))
+    let dt_utc = DateTime::<Utc>::from_naive_utc_and_offset(utc_ndt, Utc);
+    // 东经日落会算出负的大 ut_hours, 锚定后回退一天(如哈尔滨 16:03 算成前一日, HH:MM 相同极难察觉),
+    // 导致 next_event 跳到次日日出、当天日落漏切。本地日期不匹配时 +24h 校正。
+    // ponytail: 只校正"回退一天"; 极圈/极端偏移不在覆盖范围
+    let dt_local = dt_utc.with_timezone(&Local);
+    Some(if dt_local.date_naive() == date {
+        dt_local
+    } else {
+        (dt_utc + chrono::Duration::hours(24)).with_timezone(&Local)
+    })
 }
 
 pub fn next_event(
@@ -110,5 +118,23 @@ fn norm360(v: f64) -> f64 {
         r + 360.0
     } else {
         r
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 回归: 东经日落曾回退到前一日(同 HH:MM 难察觉), 致当天日落漏切
+    #[test]
+    fn sunset_lands_on_target_local_date() {
+        let t = get_sun_event("45.75,126.65", false, 0).unwrap();
+        assert_eq!(t.date_naive(), Local::now().date_naive());
+    }
+
+    #[test]
+    fn sunrise_lands_on_target_local_date() {
+        let t = get_sun_event("45.75,126.65", true, 0).unwrap();
+        assert_eq!(t.date_naive(), Local::now().date_naive());
     }
 }

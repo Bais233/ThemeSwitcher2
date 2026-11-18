@@ -1,21 +1,23 @@
-// ThemeSwitcher2 — 按日出日落自动切换 Windows 深色/浅色模式与鼠标指针(Rust 版)
-// 架构: tao 事件循环(托盘消息泵) + 1 秒心跳, 无后台线程
+// ThemeSwitcher2 引擎 — 托盘常驻, 按日出日落自动切换深浅色与鼠标指针
+// 共享核心在 lib.rs(仪表盘二进制 src/bin/ui.rs 复用); 本文件只管托盘与心跳
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod cursor;
-mod location;
-mod settings;
-mod sun;
-mod theme;
 mod tray;
 
 use chrono::{DateTime, Local};
 use std::time::{Duration, Instant, SystemTime};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoop};
+use themeswitcher2::{controller, cursor, location, settings, sun, theme, ENGINE_STATE, RESOLVED_LATLON, SNOOZE_UNTIL};
 use tray_icon::menu::MenuEvent;
 
 fn main() {
+    // 单 exe 双模式: 无参 = 托盘引擎(常驻), --ui = 独立进程跑设置界面
+    // 仍是两个进程: UI 崩溃不影响引擎, 引擎自启不弹窗
+    if std::env::args().any(|a| a == "--ui") {
+        themeswitcher2::ui::run();
+        return;
+    }
     settings::init();
     cursor::capture_active_cursor();
     let mut current_light = theme::sync_current_theme();
@@ -23,6 +25,7 @@ fn main() {
     // 定位优先级: 坐标 > 地名(联网解析一次) > IP 自动(联网一次)
     let s = settings::get();
     let latlon = resolve_latlon(&s.location);
+    *RESOLVED_LATLON.lock().unwrap() = latlon.clone();
     drop(s);
 
     // 开机补课: 启动时先把主题对齐到当前时刻应有的状态
@@ -40,7 +43,10 @@ fn main() {
         }
     }
 
-    let event_loop = EventLoop::new().expect("failed to create event loop");
+    // 本机控制接口(仪表盘 UI 的数据源)
+    std::thread::spawn(controller::serve);
+
+    let event_loop = EventLoop::new();
     let (tray_obj, m) = tray::build();
     m.autostart.set_checked(theme::get_autostart());
     let menu_rx = MenuEvent::receiver();
@@ -48,6 +54,8 @@ fn main() {
     let mut next: Option<(DateTime<Local>, bool)> = None;
     let mut last_cfg = settings::timestamp();
     let mut last_text = String::new();
+    // 最近一次真正写主题的时刻: 偏差纠正的节流基准, 避免与用户操作来回拉锯
+    let mut last_set = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
         // 1 秒心跳
@@ -69,10 +77,12 @@ fn main() {
                 theme::set_theme(true);
                 current_light = true;
                 next = None;
+                last_set = Instant::now();
             } else if ev.id() == m.to_dark.id() {
                 theme::set_theme(false);
                 current_light = false;
                 next = None;
+                last_set = Instant::now();
             } else if ev.id() == m.autostart.id() {
                 let on = m.autostart.is_checked();
                 theme::set_autostart(on);
@@ -80,6 +90,11 @@ fn main() {
                 s.autostart = on;
                 settings::set(s.clone());
                 settings::save(&s);
+            } else if ev.id() == m.settings_ui.id() {
+                // 启动自身 --ui 模式(独立进程)
+                if let Ok(exe) = std::env::current_exe() {
+                    let _ = std::process::Command::new(exe).arg("--ui").spawn();
+                }
             } else if ev.id() == m.open_config.id() {
                 let _ = std::process::Command::new("notepad.exe")
                     .arg(settings::config_path())
@@ -96,11 +111,12 @@ fn main() {
             return;
         }
 
-        // 配置文件热重载(别的编辑器改了 ini 也能跟上)
+        // 配置文件热重载(别的编辑器改了 ini 也能跟上); UI 的 reload 请求也在这里消费
         let mt = settings::timestamp();
-        if mt != last_cfg {
+        if mt != last_cfg || controller::consume_reload() {
             last_cfg = mt;
             settings::set(settings::load());
+            cursor::invalidate_pack_cache(); // 装了新指针包后重扫, 不必重启程序
             next = None;
             m.autostart.set_checked(theme::get_autostart());
         }
@@ -116,17 +132,44 @@ fn main() {
             });
         }
 
-        // 到点切换
+        // 到点切换(推迟中跳过: 错过的事件留在 next 里, 推迟到期后下一秒补课对齐)
+        let snoozing = {
+            let mut g = SNOOZE_UNTIL.lock().unwrap();
+            match *g {
+                Some(t) if Instant::now() < t => true,
+                Some(_) => {
+                    *g = None; // 过期清理
+                    false
+                }
+                None => false,
+            }
+        };
         if let Some((when, light)) = next {
-            if now >= when {
+            if now >= when && !snoozing {
                 theme::set_theme(light);
                 current_light = light;
                 next = None;
+                last_set = Instant::now();
             }
         }
 
         // 跟随用户在系统设置里的手动修改
         current_light = theme::sync_current_theme();
+
+        // 持续校验: 当前主题与此刻应有的不符(手动改动/外部程序/休眠恢复)时纠正。
+        // 到点切换只是"事件驱动", 光靠它会让错误状态一直持续到下一个日出/日落。
+        // 5 秒节流避免与用户操作来回抖动; 推迟期间完全不动。
+        if !snoozing {
+            if let Some(should) =
+                sun::current_light_for(&latlon, s.sunrise_offset_min, s.sunset_offset_min, now)
+            {
+                if should != current_light && last_set.elapsed() >= Duration::from_secs(5) {
+                    theme::set_theme(should);
+                    current_light = should;
+                    last_set = Instant::now();
+                }
+            }
+        }
 
         // 状态行(仅变化时刷新, 避免菜单重绘闪烁)
         let mode = if current_light { "浅色模式" } else { "深色模式" };
@@ -143,6 +186,17 @@ fn main() {
             m.status.set_text(text.clone());
             last_text = text;
         }
+
+        // 引擎状态同步给控制接口
+        let (next_when, next_light) = match next {
+            Some((t, l)) => (t.format("%H:%M").to_string(), l),
+            None => (String::new(), false),
+        };
+        *ENGINE_STATE.write().unwrap() = controller::EngineStatus {
+            light: current_light,
+            next_when,
+            next_light,
+        };
     });
 }
 

@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::SystemTime;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub switch_apps: bool,
     pub switch_system: bool,
@@ -15,6 +16,7 @@ pub struct Settings {
     pub cursor_dark_scheme: String,
     pub location: String,
     pub autostart: bool,
+    pub snooze_minutes: i64,
 }
 
 impl Default for Settings {
@@ -29,6 +31,7 @@ impl Default for Settings {
             cursor_dark_scheme: "(不修改)".into(),
             location: String::new(),
             autostart: false,
+            snooze_minutes: 15,
         }
     }
 }
@@ -85,6 +88,7 @@ pub fn load() -> Settings {
                     s.autostart = b;
                 }
             }
+            "SnoozeMinutes" => s.snooze_minutes = v.parse().unwrap_or(15),
             _ => {}
         }
     }
@@ -93,7 +97,7 @@ pub fn load() -> Settings {
 
 pub fn save(s: &Settings) {
     let body = format!(
-        "SwitchApps={}\nSwitchSystem={}\nSunriseOffsetMin={}\nSunsetOffsetMin={}\nSwitchCursor={}\nCursorLightScheme={}\nCursorDarkScheme={}\nLocation={}\nAutostart={}\n",
+        "SwitchApps={}\nSwitchSystem={}\nSunriseOffsetMin={}\nSunsetOffsetMin={}\nSwitchCursor={}\nCursorLightScheme={}\nCursorDarkScheme={}\nLocation={}\nAutostart={}\nSnoozeMinutes={}\n",
         s.switch_apps,
         s.switch_system,
         s.sunrise_offset_min,
@@ -102,7 +106,8 @@ pub fn save(s: &Settings) {
         s.cursor_light_scheme,
         s.cursor_dark_scheme,
         s.location,
-        s.autostart
+        s.autostart,
+        s.snooze_minutes
     );
     let _ = fs::write(config_path(), body);
 }
