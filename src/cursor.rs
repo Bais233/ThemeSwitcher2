@@ -122,16 +122,11 @@ fn pack_dirs() -> &'static HashMap<String, String> {
                 if !path.is_dir() {
                     continue;
                 }
-                // 父目录整体算一个包(匹配时会递归补全子目录)。
-                // 子目录只有在父目录凑不出可用包时才单独注册, 避免出现
-                //「W11_light_v2.2 base」这种只含半套指针、切换后残留另一半的选项。
+                // 父目录与子目录都注册为可选方案:
+                // 旧配置里存的就是「包名 子目录」形式(W11_light_v2.2 base),
+                // 不注册子目录会让已存的设置失效、切不回去。
+                // 半套指针的问题由 match_pack_files 的兄弟目录补齐解决。
                 try_add_pack(&path, None, &mut map);
-                let parent_ok = map
-                    .get(&d.file_name().to_string_lossy().to_string())
-                    .is_some();
-                if parent_ok {
-                    continue;
-                }
                 if let Ok(subs) = std::fs::read_dir(&path) {
                     let mut subs: Vec<_> = subs.flatten().collect();
                     subs.sort_by_key(|e| e.file_name());
