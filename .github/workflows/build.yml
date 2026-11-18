@@ -6,11 +6,12 @@ on:
     tags: [ 'v*' ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -35,5 +36,24 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
+          body: |
+            ## 更新内容
+
+            ### 新增
+            - **推迟控制**: 可暂时推迟自动切换 15 分钟 / 30 分钟 / 1 / 2 / 4 / 8 小时, 期间不切换主题, 到期后自动对齐到当前时刻应有的模式
+            - 托盘菜单新增「设置界面…」, 直接打开图形设置
+            - 「调整」区改为浅色/深色双输入框, 可直接键入 ±720 分钟偏移
+
+            ### 变更
+            - **单文件分发**: 引擎与设置界面合并为一个 `ThemeSwitcher2.exe`, 界面以 `--ui` 参数启动独立进程, 界面崩溃不影响托盘常驻切换
+            - README 补充浅色/深色界面预览
+
+            ### 修复
+            - 修复 `/status` 读取一份从不更新的状态副本, 导致界面永远显示「浅色 · 下次切换 --:--」
+            - **修复东经地区日落时刻回退一天**: 哈尔滨等地日落被算到前一天, 使当天日落切换被跳过(时间显示相同, 极难察觉)
+            - 修复设置界面在引擎未运行时保存被静默丢弃, 现在会直接写入配置文件并在界面上提示结果
+
+            ### 下载
+            单个 `ThemeSwitcher2.exe`。注意本次为可执行文件替换, 更新后请将旧的 `ThemeSwitcher2-UI.exe` 删除。
           files: |
             target/release/ThemeSwitcher2.exe
