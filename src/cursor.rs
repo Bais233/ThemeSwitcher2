@@ -27,7 +27,7 @@ static ROLE_ALIASES: [&[&str]; 14] = [
     &["help-select", "help", "帮助选择", "帮助"],
     &["working", "appstarting", "后台运行", "后台"],
     &["busy", "wait", "忙", "beachball"],
-    &["crosshair", "cross", "精确选择"],
+    &["crosshair", "cross", "精确选择", "precision", "precision-select"],
     &["text-select", "text", "ibeam", "文本选择", "beam"],
     &["handwriting", "手写", "pen"],
     &["unavailable", "不可用", "no"],
@@ -119,17 +119,27 @@ fn pack_dirs() -> &'static HashMap<String, String> {
             dirs.sort_by_key(|e| e.file_name());
             for d in dirs {
                 let path = d.path();
-                if path.is_dir() {
-                    try_add_pack(&path, None, &mut map);
-                    if let Ok(subs) = std::fs::read_dir(&path) {
-                        let mut subs: Vec<_> = subs.flatten().collect();
-                        subs.sort_by_key(|e| e.file_name());
-                        for s in subs {
-                            let spath = s.path();
-                            if spath.is_dir() {
-                                let parent = d.file_name().to_string_lossy().to_string();
-                                try_add_pack(&spath, Some(&parent), &mut map);
-                            }
+                if !path.is_dir() {
+                    continue;
+                }
+                // 父目录整体算一个包(匹配时会递归补全子目录)。
+                // 子目录只有在父目录凑不出可用包时才单独注册, 避免出现
+                //「W11_light_v2.2 base」这种只含半套指针、切换后残留另一半的选项。
+                try_add_pack(&path, None, &mut map);
+                let parent_ok = map
+                    .get(&d.file_name().to_string_lossy().to_string())
+                    .is_some();
+                if parent_ok {
+                    continue;
+                }
+                if let Ok(subs) = std::fs::read_dir(&path) {
+                    let mut subs: Vec<_> = subs.flatten().collect();
+                    subs.sort_by_key(|e| e.file_name());
+                    for s in subs {
+                        let spath = s.path();
+                        if spath.is_dir() {
+                            let parent = d.file_name().to_string_lossy().to_string();
+                            try_add_pack(&spath, Some(&parent), &mut map);
                         }
                     }
                 }
@@ -140,20 +150,8 @@ fn pack_dirs() -> &'static HashMap<String, String> {
 }
 
 fn try_add_pack(path: &std::path::Path, parent: Option<&str>, map: &mut HashMap<String, String>) {
-    let mut count = 0;
-    if let Ok(rd) = std::fs::read_dir(path) {
-        for e in rd.flatten() {
-            let ext = e
-                .path()
-                .extension()
-                .and_then(|x| x.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            if ext == "ani" || ext == "cur" {
-                count += 1;
-            }
-        }
-    }
+    // 递归统计: W11 这类包把指针拆进 base/ + sunset/ 子目录, 只数本层会误判为不可用
+    let count = collect_cursor_files(path, true).len();
     if count < 3 {
         return; // 至少 3 个指针文件才算可用的包
     }
@@ -175,24 +173,50 @@ pub fn scan_cursor_pack_names() -> Vec<String> {
     names
 }
 
-fn match_pack_files(dir: &str) -> Option<[Option<String>; 14]> {
-    let mut result: [Option<String>; 14] = Default::default();
-    let mut claimed: HashSet<String> = HashSet::new();
-    let rd = std::fs::read_dir(dir).ok()?;
-    let mut files: Vec<std::path::PathBuf> = Vec::new();
-    for e in rd.flatten() {
+fn collect_cursor_files(dir: &std::path::Path, recursive: bool) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let Ok(rd) = std::fs::read_dir(dir) else { return out };
+    let mut entries: Vec<_> = rd.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for e in entries {
         let p = e.path();
+        if p.is_dir() {
+            if recursive {
+                out.extend(collect_cursor_files(&p, true));
+            }
+            continue;
+        }
         let ext = p
             .extension()
             .and_then(|x| x.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
         if ext == "ani" || ext == "cur" {
-            files.push(p);
+            out.push(p);
         }
     }
+    out
+}
+
+fn match_pack_files(dir: &str) -> Option<[Option<String>; 14]> {
+    let mut result: [Option<String>; 14] = Default::default();
+    let mut claimed: HashSet<String> = HashSet::new();
+    let dir_path = std::path::Path::new(dir);
+    let mut files: Vec<std::path::PathBuf> = collect_cursor_files(dir_path, false);
     if files.is_empty() {
         return None;
+    }
+    // 指针包作者常把静态/动画指针拆进子目录(如 W11 的 base/ + sunset/)。
+    // 只扫本层会漏掉 working/busy, 于是切换后那几个角色残留上一套方案 -> 两套指针混用。
+    // 本层优先, 缺失的用同一包内其余子目录补齐; 不跨包。
+    if let Some(parent) = dir_path.parent() {
+        if parent != std::path::Path::new(CURSORS_DIR) {
+            for f in collect_cursor_files(parent, true) {
+                if !files.iter().any(|x| x == &f) {
+                    files.push(f);
+                }
+            }
+        }
     }
     // 认领顺序: 专属别名多的角色先挑, 防止 Arrow 的泛化别名抢走 up-arrow 的文件
     let order: [usize; 14] = [12, 13, 4, 5, 6, 7, 3, 2, 8, 9, 10, 11, 1, 0];
@@ -224,6 +248,14 @@ fn match_pack_files(dir: &str) -> Option<[Option<String>; 14]> {
                 claimed.insert(files[fi].to_string_lossy().to_string());
                 break;
             }
+        }
+        // 认领不到的角色不写入 = 保留上一套方案的指针, 桌面会出现两套混用。
+        // 不强行兜底(那会静默换成不相干的图), 但要让问题可见。
+        if result[role].is_none() {
+            eprintln!(
+                "[cursor] 包 {:?} 未识别出角色 {}, 该角色将保持原样",
+                dir, VALUE_NAMES[role]
+            );
         }
     }
     Some(result)
@@ -330,5 +362,50 @@ pub fn apply_cursor_scheme(scheme: &str) {
 fn reload_cursors() {
     unsafe {
         SystemParametersInfoW(SPI_SETCURSORS, 0, std::ptr::null_mut(), SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 回归: 指针包把静态/动画指针拆进子目录时(如 W11 的 base/ + sunset/),
+    // 只扫本层会漏掉 working/busy, 切换后那几个角色残留上一套方案 -> 两套指针混用。
+    // 测试用临时目录构造同样的结构, 不依赖本机是否装了特定指针包。
+    #[test]
+    fn subdir_pack_fills_roles_from_sibling_dirs() {
+        let root = std::env::temp_dir().join("ts2_cursor_pack_test");
+        let _ = std::fs::remove_dir_all(&root);
+        let base = root.join("base");
+        let sunset = root.join("sunset");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&sunset).unwrap();
+
+        for n in ["pointer", "help", "precision", "beam", "handwriting", "unavailable",
+                  "vert", "horz", "dgn1", "dgn2", "alternate", "link"] {
+            std::fs::write(base.join(format!("{}.cur", n)), b"x").unwrap();
+        }
+        for n in ["working", "busy"] {
+            std::fs::write(sunset.join(format!("{}.ani", n)), b"x").unwrap();
+        }
+
+        let matched = match_pack_files(&root.to_string_lossy()).unwrap();
+        let count = matched.iter().filter(|x| x.is_some()).count();
+        assert_eq!(
+            count, 14,
+            "14 个角色都应匹配到; 实际 {:?}",
+            VALUE_NAMES
+                .iter()
+                .zip(matched.iter())
+                .filter(|(_, v)| v.is_none())
+                .map(|(n, _)| *n)
+                .collect::<Vec<_>>()
+        );
+
+        // 动画指针必须来自 sunset 子目录
+        let working = matched[2].as_ref().expect("AppStarting 未匹配");
+        assert!(working.contains("sunset"), "AppStarting 应取自 sunset/: {}", working);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
