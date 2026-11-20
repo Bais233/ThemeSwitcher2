@@ -11,27 +11,11 @@ use tao::event_loop::{ControlFlow, EventLoop};
 use themeswitcher2::{controller, cursor, location, settings, sun, theme, ENGINE_STATE, RESOLVED_LATLON, SNOOZE_UNTIL};
 use tray_icon::menu::MenuEvent;
 
-// 单实例守卫: 已有引擎在跑时返回 false。
+// 单实例守卫: 控制接口端口被占 = 已有引擎在跑。
 // 没有它的话第二个实例会在建托盘/事件循环时 panic, release 下 panic=abort 直接崩(0xc0000409),
 // 用户看到的现象就是"双击打不开"。
-#[cfg(windows)]
-fn claim_single_instance() -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
-    use windows_sys::Win32::System::Threading::CreateMutexW;
-    unsafe {
-        let name: Vec<u16> = "Local\\ThemeSwitcher2.Engine\0".encode_utf16().collect();
-        let h = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
-        if h == 0 {
-            return true; // 创建失败: 不因此阻止启动
-        }
-        if GetLastError() == ERROR_ALREADY_EXISTS {
-            CloseHandle(h);
-            return false;
-        }
-        // 句柄不关闭, 随进程退出由系统回收 —— 这正是"锁"的存活期
-        std::mem::forget(h);
-        true
-    }
+fn engine_already_running() -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", controller::PORT)).is_err()
 }
 
 fn main() {
@@ -42,7 +26,7 @@ fn main() {
         return;
     }
     // 已有引擎在跑: 打开设置界面并退出, 而不是崩掉让用户以为程序坏了
-    if !claim_single_instance() {
+    if engine_already_running() {
         if let Ok(exe) = std::env::current_exe() {
             let _ = std::process::Command::new(exe).arg("--ui").spawn();
         }

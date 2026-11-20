@@ -17,7 +17,7 @@ path = "src/main.rs"
 tao = "0.30"
 tray-icon = "0.19"
 winreg = "0.52"
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 ureq = "2"
 image = { version = "0.25", default-features = false, features = ["ico", "png"] }
 chrono = "0.4"
